@@ -1,0 +1,51 @@
+# ════════════════════════════════════════════════════════════════
+#  BR0THER-H00D — dependencies
+#  Install:  pip install -r requirements.txt
+# ════════════════════════════════════════════════════════════════
+#
+#  ABOUT THE AI BRAIN:
+#  The brotherhood thinks using whatever you have, auto-detected in order:
+#    1. Local Ollama / Hermes   → free, runs on your machine, no key, no package
+#    2. OpenRouter              → free models, just needs a key (HTTP, no package)
+#    3. Groq  ★ RECOMMENDED      → free + fast, just needs a key (HTTP, no package)
+#    4. (optional) OpenAI / Anthropic → only if you choose a GPT/Claude model
+#
+#  Groq, OpenRouter and Ollama need NO extra packages — they're called
+#  directly over HTTP. Just put your key in .env. Groq is the easy free default.
+# ════════════════════════════════════════════════════════════════
+
+# --- web / API server ---
+flask
+gunicorn
+werkzeug
+fastapi
+httpx
+
+# --- core utilities (always required) ---
+requests
+python-dotenv
+psutil
+pydantic
+
+# --- data feeds / scraping ---
+feedparser
+beautifulsoup4
+
+# --- solana / crypto ---
+solders
+base58
+
+# --- telegram notifications (optional feature, but imported) ---
+python-telegram-bot
+
+# ────────────────────────────────────────────────────────────────
+#  OPTIONAL AI PROVIDERS — you do NOT need these to run.
+#  Groq (free) is the default and needs no package.
+#  Only uncomment a line below if you want to use that specific provider:
+# ─────────────────────────────────────────────────────────────────
+# openai        # only if you run a GPT model
+# anthropic     # only if you run a Claude model
+
+# --- ASGI server (standard = includes websockets, needed for the live terminal) ---
+uvicorn[standard]
+websockets
