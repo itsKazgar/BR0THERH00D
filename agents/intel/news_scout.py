@@ -77,8 +77,6 @@ def run():
         cycle += 1
         time.sleep(INTERVAL)
 
-if __name__ == "__main__":
-    run()
 
 def fetch_and_store_news():
     """Pull real news from crypto, AI, tech sources and save to brain."""
@@ -103,3 +101,6 @@ def fetch_and_store_news():
         print(f"  📰 news fetch: saved {saved} articles to brain")
     except Exception as e:
         print(f"  📰 news fetch error: {e}")
+
+if __name__ == "__main__":
+    run()
