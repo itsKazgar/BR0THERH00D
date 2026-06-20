@@ -1,0 +1,27 @@
+BR0THER-H00D — UPDATE PACK
+==========================
+28 changed files: all bug fixes + the dashboard (stats, live terminal,
+file editor, logs) + the auto-auth gate.
+
+HOW TO APPLY (5 minutes, no giant terminal paste):
+
+1. Unzip this pack. You'll see files in folders (core/, agents/, brothers/).
+
+2. Copy ALL of these files/folders INTO your local BR0THER-H00D repo folder,
+   letting them OVERWRITE the existing ones. The folder structure matches,
+   so it drops straight in.
+   - On Mac/Linux: unzip, then in terminal:
+        cp -r brotherhood_updates/* brotherhood_updates/.env.example ~/BR0THER-H00D/
+     (the .env.example line is separate because it starts with a dot)
+   - Or just drag-and-drop in your file manager, choose "replace/merge".
+
+3. In your terminal, go to the repo and push normally:
+        cd ~/BR0THER-H00D
+        git add -A
+        git commit -m "dashboard + 23 bug fixes + auto-auth gate"
+        git push origin main
+
+That's it. No heredocs, no big paste — just normal git.
+
+NOTE: do NOT copy _HOW_TO_APPLY.txt into your repo (or do, it's harmless).
+Your real .env (with keys) is untouched — only .env.example updates.
