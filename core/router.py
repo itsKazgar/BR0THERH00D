@@ -7,6 +7,13 @@ import re
 # Each intent: signal words, the brother, and how to rewrite the input into its command.
 INTENTS = [
     {
+        "brother": "alpha",
+        "signals": ["news", "alpha", "what's happening", "whats happening",
+                    "catch me up", "what's new", "whats new", "latest in",
+                    "study", "tech news", "ai news", "crypto news", "solana news"],
+        "rewrite": lambda t: t,  # alpha reads its own phrasing
+    },
+    {
         "brother": "crypto",
         "signals": ["price", "worth", "how much", "cost", "sol", "solana", "btc",
                     "bitcoin", "eth", "ethereum", "fear", "greed", "$"],
@@ -121,7 +128,9 @@ def route(user_input: str):
     """Return (brother_id, rewritten_command) or (None, None) if it's just chat."""
     low = user_input.lower()
     # Explicit search/news verbs override topic-name matches (news on X, find X)
-    search_verbs = ["news on", "news about", "find me", "find ", "search",
+    news_words = ["news", "what's happening", "whats happening", "catch me up", "study ", "latest in"]
+    force_alpha = any(w in low for w in news_words)
+    search_verbs = ["find me", "find ", "search",
                     "look up", "lookup", "what is", "who is", "latest on",
                     "tell me about", "research", "explain", "how to"]
     force_search = any(v in low for v in search_verbs)
@@ -133,7 +142,9 @@ def route(user_input: str):
             if sig in low:
                 score += 2 if " " in sig else 1
         if intent["brother"] == "search" and force_search:
-            score += 5  # decisive boost for clear search intent
+            score += 5
+        if intent["brother"] == "alpha" and force_alpha:
+            score += 8  # news/study intent beats price
         if score > best_score:
             best, best_score = intent, score
     if not best or best_score == 0:
