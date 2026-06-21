@@ -45,6 +45,24 @@ def _ordered():
     return listed + unlisted + tail
 
 def dispatch(user_input: str):
+    # Smart router first: understand natural phrasing, rewrite to a command.
+    try:
+        from core import router
+        bro_id, cmd = router.route(user_input)
+        if bro_id and bro_id in _brothers and cmd:
+            mod = _brothers[bro_id]
+            if getattr(mod, "ENABLED", True):
+                result = mod.run(cmd)
+                if result is not None:
+                    try:
+                        from core import personality
+                        personality.bump(bro_id)
+                    except Exception:
+                        pass
+                    return result, mod.NAME
+    except Exception as e:
+        print(f"  [router] {e}")
+
     for key in _ordered():
         mod = _brothers[key]
         if not getattr(mod, "ENABLED", True):
