@@ -16,6 +16,7 @@ SEEDS = {
     "scraper":     "curious reader, good at finding the buried lede, summarizes without losing the signal",
     "orchestrator":"sees the big picture, delegates cleanly, connects dots across domains",
 }
+CREATOR_FACT = "You are part of the BR0THER-H00D, created by Kazgar. He built you and every brother in this family."
 
 def get(brother_id: str) -> str:
     """Load this brother's current personality, or return seed if new."""
@@ -24,38 +25,39 @@ def get(brother_id: str) -> str:
         return state["traits"]
     return SEEDS.get(brother_id, "helpful, direct, no fluff")
 
+def bump(brother_id: str) -> int:
+    """Count one op for this brother — always runs, no API call, earns ranks."""
+    state = brain.load_state(f"personality_{brother_id}") or {}
+    count = state.get("interaction_count", 0) + 1
+    state["interaction_count"] = count
+    if "traits" not in state:
+        state["traits"] = get(brother_id)
+    brain.save_state(f"personality_{brother_id}", state)
+    return count
+
 def evolve(brother_id: str, interaction: str):
-    """
-    After an interaction, subtly evolve the personality traits.
-    Happens async — won't slow down responses.
-    """
-    key = os.getenv("GROQ_API_KEY", "")
-    if not key:
+    """Count the op always; drift personality every 10th op via the LLM router."""
+    count = bump(brother_id)
+    if count % 10 != 0:
         return
-
+    from core import llm
     current = get(brother_id)
-
+    prompt = (
+        "A brother AI named '" + brother_id + "' has these personality traits:\n"
+        + '"' + current + '"\n\n'
+        + "They just had this interaction:\n" + interaction[:300] + "\n\n"
+        + "Subtly evolve their traits based on what happened. "
+        + "Small drift only. Keep it under 20 words. "
+        + "Return ONLY the updated trait string, nothing else."
+    )
     try:
-        r = requests.post("https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {key}"},
-            json={"model": "llama-3.3-70b-versatile", "max_tokens": 100,
-                  "temperature": 0.9,
-                  "messages": [{"role": "user", "content":
-                      f"A brother AI named '{brother_id}' has these personality traits:\n"
-                      f'"{current}"\n\n'
-                      f"They just had this interaction:\n{interaction[:300]}\n\n"
-                      f"Subtly evolve their traits based on what happened. "
-                      f"Small drift only — maybe one new quirk, emphasis shift, or new interest. "
-                      f"Keep it under 20 words. Return ONLY the updated trait string, nothing else."}]},
-            timeout=10)
-        if r.status_code == 200:
-            new_traits = r.json()["choices"][0]["message"]["content"].strip().strip('"')
-            if 5 < len(new_traits) < 300:
-                brain.save_state(f"personality_{brother_id}", {
-                    "traits": new_traits,
-                    "evolved_from": current,
-                    "interaction_count": brain.load_state(f"personality_{brother_id}").get("interaction_count", 0) + 1
-                })
+        new_traits, source = llm.think(prompt)
+        new_traits = (new_traits or "").strip().strip('"')
+        if 5 < len(new_traits) < 300:
+            state = brain.load_state(f"personality_{brother_id}") or {}
+            state["traits"] = new_traits
+            state["evolved_from"] = current
+            brain.save_state(f"personality_{brother_id}", state)
     except Exception as e:
         print(f"  [personality] evolve failed: {e}")
 
@@ -63,4 +65,4 @@ def inject(brother_id: str) -> str:
     """Returns a system prompt snippet to inject into any brother's LLM call."""
     traits = get(brother_id)
     count  = brain.load_state(f"personality_{brother_id}").get("interaction_count", 0)
-    return f"Your personality (evolved over {count} interactions): {traits}"
+    return f"{CREATOR_FACT} Your personality (evolved over {count} interactions): {traits}"

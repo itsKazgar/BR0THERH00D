@@ -52,6 +52,11 @@ def dispatch(user_input: str):
         try:
             result = mod.run(user_input)
             if result is not None:
+                try:
+                    from core import personality
+                    personality.bump(key)
+                except Exception:
+                    pass
                 return result, mod.NAME
         except Exception as e:
             # one brother failing must never break the conversation

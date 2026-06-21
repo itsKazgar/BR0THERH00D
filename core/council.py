@@ -224,7 +224,7 @@ def brotherhood_status() -> str:
     """Full status of the brotherhood — all brothers, ranks, circles."""
     lines = []
     lines.append("╔══════════════════════════════════════════════╗")
-    lines.append("║         THE BR0THER-H00D COUNCIL             ║")
+    lines.append("║                   BR0THERH00D                    ║")
     lines.append("║              All Seeing. All Knowing.         ║")
     lines.append("╚══════════════════════════════════════════════╝")
     lines.append("")

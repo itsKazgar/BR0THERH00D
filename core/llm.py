@@ -22,6 +22,11 @@ OR_URL   = "https://openrouter.ai/api/v1/chat/completions"
 #   deepseek/deepseek-r1                  — DeepSeek R1 full
 OR_MODEL = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-r1-0528:free")
 
+# ── Model names, all swappable via .env or here. New model out? Change one line. ──
+GROQ_MODEL      = os.getenv("GROQ_MODEL",      "llama-3.3-70b-versatile")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5")
+OPENAI_MODEL    = os.getenv("OPENAI_MODEL",    "gpt-4o-mini")
+
 HERMES_MODELS = [
     "hermes-3",
     "nous-hermes-3",
@@ -94,7 +99,7 @@ def _think_groq(prompt, system=""):
     r = requests.post(GROQ_URL,
         headers={"Authorization": f"Bearer {key}"},
         json={
-            "model": "llama-3.3-70b-versatile",
+            "model": GROQ_MODEL,
             "messages": messages,
             "max_tokens": 400,
             "temperature": 0.3,
@@ -138,7 +143,7 @@ def think(prompt, system=""):
             messages.append({"role": "user", "content": prompt})
             r = requests.post("https://api.anthropic.com/v1/messages",
                 headers={"x-api-key": key, "anthropic-version": "2023-06-01"},
-                json={"model": "claude-haiku-4-5",
+                json={"model": ANTHROPIC_MODEL,
                       "max_tokens": 400,
                       "messages": messages},
                 timeout=20)
@@ -159,7 +164,7 @@ def think(prompt, system=""):
             msgs.append({"role": "user", "content": prompt})
             r = requests.post("https://api.openai.com/v1/chat/completions",
                 headers={"Authorization": f"Bearer {key}"},
-                json={"model": "gpt-4o-mini",
+                json={"model": OPENAI_MODEL,
                       "messages": msgs,
                       "max_tokens": 400},
                 timeout=20)
