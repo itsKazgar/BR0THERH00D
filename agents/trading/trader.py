@@ -900,12 +900,16 @@ class Trader:
                 price = float(best.get("priceUsd", 0) or 0) or price
                 buy_ratio = buys / max(1, buys + sells)
                 if ch1h < -15 or ch1h > 800:
+                    print(f"  [trader] ⏭ {name} skipped — 1h move {ch1h:+.1f}% out of range")
                     acted_on[mint] = time.time() + 3600; continue
                 if buy_ratio < 0.52:
+                    print(f"  [trader] ⏭ {name} skipped — buy ratio only {buy_ratio:.0%} on re-check")
                     acted_on[mint] = time.time() + 3600; continue
                 if liq < 10_000:
+                    print(f"  [trader] ⏭ {name} skipped — liq dropped to ${liq:,.0f}")
                     acted_on[mint] = time.time() + 3600; continue
                 if ch5m < -3:
+                    print(f"  [trader] ⏭ {name} skipped — 5m dropped {ch5m:+.1f}% since signal")
                     acted_on[mint] = time.time() + 3600; continue
                 coin = {
                     "name":       name,  "mint":       mint,
