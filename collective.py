@@ -88,7 +88,16 @@ def tally_votes(results, agent_keys):
 
     for key, r in zip(agent_keys, results):
         w = get_weight(key)
+<<<<<<< HEAD
         decision = (r.get("decision") or "ERROR").upper()
+=======
+        decision = r.get("decision", "PASS").upper()
+        is_veto_agent = key in cfg["veto_agents"]
+        if is_veto_agent and confidence == 0.0:
+            return {"approved": False, "reason": f"{key} errored — fail-closed veto",
+                    "trade_count": 0, "total_agents": len(agent_keys),
+                    "weighted_pct": 0, "avg_confidence": 0}
+>>>>>>> 6384798 (fix: REAPER model slug, fail-closed veto, paper_trades write)
         if decision == "TRADE":
             trade_weight += w
             trade_count += 1
@@ -205,6 +214,13 @@ Buys 24h: {md.get('buys_24h')} | Sells 24h: {md.get('sells_24h')} | DEX: {md.get
     verdict = tally_votes(results, agent_keys)
     print_council(display_token, results, agent_keys, verdict)
     log_votes(display_token, agent_keys, results)
+    save_paper_trade(
+        display_token, verdict,
+        price=price,
+        volume=token_data.get("volume_24h", 0) if isinstance(token_data, dict) else 0,
+        rug_score=token_data.get("rug_score", 0) if isinstance(token_data, dict) else 0,
+        momentum_score=token_data.get("momentum_score", 0) if isinstance(token_data, dict) else 0,
+    )
 
     sizing = None
     if verdict["approved"] and price > 0:
@@ -219,3 +235,26 @@ if __name__ == "__main__":
     task = input("\nEnter token or task:\n> ")
     asyncio.run(collective_debate(task))
 
+
+
+def save_paper_trade(token, verdict, mint="", price=0, volume=0, rug_score=0, momentum_score=0):
+    """Write council outcome to paper_trades table."""
+    import sqlite3, datetime
+    db = sqlite3.connect("data/agent.db")
+    db.execute("""
+        INSERT INTO paper_trades (token, decision, confidence, agents_voted, price, volume, score, rug_score, momentum_score, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        token,
+        "TRADE" if verdict["approved"] else "PASS",
+        verdict["avg_confidence"],
+        verdict["trade_count"],
+        str(price),
+        volume,
+        verdict["weighted_pct"],
+        rug_score,
+        momentum_score,
+        datetime.datetime.utcnow().isoformat()
+    ))
+    db.commit()
+    db.close()

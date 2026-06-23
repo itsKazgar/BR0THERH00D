@@ -6,7 +6,7 @@ COUNCIL_CONFIG is the one place you edit to tune everything.
 COUNCIL_CONFIG = {
     "vote_threshold": 48,
     "min_agents_trade": 4,
-    "veto_agents": [],          
+    "veto_agents": ["security"],          
     "paper_trading": True,
     "max_position_pct": 0.03,
     "take_profit_pct": 0.40,
@@ -102,7 +102,7 @@ Buy/sell txn count diverging from volume = wash trading.
 On-chain tells the truth when price lies."""
     },
     "security": {
-        "model": "groq",
+        "model": "groq_llama70b",
         "name": "REAPER",
         "role": "Security & Rug Detection",
         "system": """You are REAPER — the collective's rug and scam detector.
