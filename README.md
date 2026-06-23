@@ -1,4 +1,4 @@
-<h1 align="center">BR0THER-H00D</h1>
+<h1 align="center">BR0THERH00D</h1>
 
 <p align="center">
   <b>A council of AI agents that share one memory and run a Solana trading desk —
@@ -14,7 +14,7 @@
 
 ## What it is
 
-Most "AI trading bots" are one model in a loop. BR0THER-H00D is a **team**:
+Most "AI trading bots" are one model in a loop. BR0THERH00D is a **team**:
 specialist agents (scanner, whale-tracker, news-scout, analyst, risk-manager…)
 share one SQLite memory and vote on every trade. A **quorum** must agree and the
 **Risk Manager can veto** before any money moves. It runs on free AI models and

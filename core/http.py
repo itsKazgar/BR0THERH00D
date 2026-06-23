@@ -14,7 +14,7 @@ import logging
 import requests
 
 log = logging.getLogger("http")
-DEFAULT_HEADERS = {"User-Agent": "BR0THER-H00D/1.0 (+https://h00d.fun)"}
+DEFAULT_HEADERS = {"User-Agent": "BR0THERH00D/1.0 (+https://h00d.fun)"}
 
 
 def _request(method, url, *, params=None, json=None, headers=None,

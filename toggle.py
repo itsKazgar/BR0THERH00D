@@ -16,7 +16,7 @@ wallet  = os.getenv("WALLET_PRIVATE_KEY", "")
 
 print(f"""
 {CY}{BD}╔══════════════════════════════════════════════════════╗
-║   🔄  BR0THER-H00D — Trading Mode Toggle             ║
+║   🔄  BR0THERH00D — Trading Mode Toggle             ║
 ╚══════════════════════════════════════════════════════╝{RS}
 
   Current mode : {f"{RD}{BD}LIVE{RS}" if current else f"{GR}PAPER{RS}"}

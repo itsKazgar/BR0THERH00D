@@ -1,5 +1,5 @@
 """
-THE COUNCIL — Freemason hierarchy for BR0THER-H00D
+THE COUNCIL — Freemason hierarchy for BR0THERH00D
 The Tome, Ranks, Seals, Circles, and Council Feed.
 """
 import os, sys, json, requests

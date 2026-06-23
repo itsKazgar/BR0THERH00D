@@ -401,7 +401,7 @@ async def trade_swap(req: SwapRequest, _auth: bool = Depends(require_auth)):
         from trading import jupiter_swap
         return await jupiter_swap(req.user_id, req.from_token, req.to_token, req.amount_sol)
     except ImportError:
-        return {"ok": False, "error": "trading.py not available — is it in ~/BR0THER-H00D/?"}
+        return {"ok": False, "error": "trading.py not available — is it in ~/BR0THERH00D/?"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

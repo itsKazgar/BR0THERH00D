@@ -30,7 +30,7 @@ mode      = "LIVE" if os.getenv("TRADE_MODE","paper").lower() == "live" else "PA
 
 print(f"""
 {CY}{BD}╔══════════════════════════════════════════════════════╗
-║   🚨  BR0THER-H00D — Sell All Positions              ║
+║   🚨  BR0THERH00D — Sell All Positions              ║
 ╚══════════════════════════════════════════════════════╝{RS}
 
   Mode     : {f"{RD}{BD}LIVE{RS}" if mode == "LIVE" else f"{GR}PAPER{RS}"}

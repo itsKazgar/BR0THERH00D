@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Quick wallet setup for BR0THER-H00D
+Quick wallet setup for BR0THERH00D
 """
 import os, sys
 from dotenv import set_key, load_dotenv
@@ -13,7 +13,7 @@ GR='\033[92m'; RD='\033[91m'; YL='\033[93m'; CY='\033[96m'; BD='\033[1m'; RS='\0
 def main():
     print(f"""
 {CY}{BD}╔══════════════════════════════════════════════════════╗
-║   💳  BR0THER-H00D — Wallet Setup                    ║
+║   💳  BR0THERH00D — Wallet Setup                    ║
 ╚══════════════════════════════════════════════════════╝{RS}
 
   This adds your Solana wallet for {RD}{BD}LIVE trading{RS}.

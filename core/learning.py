@@ -105,3 +105,50 @@ def accuracy(brother: str) -> float:
         ).fetchall()
     graded = [r["correct"] for r in rows]
     return (sum(graded) / len(graded)) if graded else 0.0
+
+def grade_crypto_predictions() -> str:
+    """
+    The grader. Re-checks due crypto predictions against live price.
+    Bullish call right if price rose; bearish right if it fell.
+    This is the moment a brother actually learns.
+    """
+    import requests
+    due = [p for p in due_for_grading() if p["brother"] == "crypto"]
+    if not due:
+        return "No crypto predictions are due for grading yet."
+
+    results = []
+    for p in due:
+        sym = p["subject"]
+        baseline = p["baseline"]
+        # fetch current price (free)
+        now_price = None
+        try:
+            if sym == "SOL":
+                r = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd", timeout=6)
+                now_price = float(r.json()["solana"]["usd"])
+            else:
+                r = requests.get(f"https://api.dexscreener.com/latest/dex/search?q={sym}", timeout=8)
+                pairs = [x for x in r.json().get("pairs", [])
+                         if x.get("chainId") == "solana"
+                         and x.get("baseToken", {}).get("symbol", "").upper() == sym]
+                if pairs:
+                    best = sorted(pairs, key=lambda x: float(x.get("liquidity", {}).get("usd", 0) or 0), reverse=True)[0]
+                    now_price = float(best.get("priceUsd", 0) or 0)
+        except Exception as e:
+            results.append(f"  #{p['id']} {sym}: couldn't fetch price to grade ({e})")
+            continue
+
+        if not now_price:
+            results.append(f"  #{p['id']} {sym}: no price, skipped")
+            continue
+
+        rose = now_price > baseline
+        bullish = "higher" in p["claim"]
+        correct = (rose and bullish) or (not rose and not bullish)
+        grade(p["id"], outcome_value=now_price, correct=correct)
+        move = (now_price - baseline) / baseline * 100 if baseline else 0
+        results.append(f"  #{p['id']} {sym}: ${baseline:.2f} -> ${now_price:.2f} ({move:+.1f}%) "
+                       f"{'✓ RIGHT' if correct else '✗ WRONG'}")
+
+    return "📊 GRADED:\n" + "\n".join(results)

@@ -219,7 +219,7 @@ for i, (script, desc) in enumerate(runnable):
 n = len(procs)
 print()
 print(CY + BD + "  ╔" + "═" * W + "╗")
-live_text = f"BR0THER-H00D IS LIVE  ·  {n} agents"
+live_text = f"BR0THERH00D IS LIVE  ·  {n} agents"
 print(CY + BD + "  ║ " + RS + GR + BD + live_text + RS + " " * (W - len(live_text) - 1) + CY + BD + "║" + RS)
 print(CY + BD + box("Ctrl+C to shut down all agents cleanly", DM))
 print(CY + BD + "  ╚" + "═" * W + "╝" + RS)

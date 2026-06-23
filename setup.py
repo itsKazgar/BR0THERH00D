@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-BR0THER-H00D — AI Setup Wizard
+BR0THERH00D — AI Setup Wizard
 Supports every major AI provider.
 """
 import os, sys, requests, subprocess
@@ -15,7 +15,7 @@ BD='\033[1m'; DM='\033[2m'; RS='\033[0m'
 def banner():
     print(f"""
 {CY}{BD}╔══════════════════════════════════════════════════════╗
-║   🤖 BR0THER-H00D — AI Setup Wizard                 ║
+║   🤖 BR0THERH00D — AI Setup Wizard                 ║
 ║   Add any AI to power your trading agents           ║
 ╚══════════════════════════════════════════════════════╝{RS}
 """)
@@ -320,7 +320,7 @@ def print_summary():
 def main():
     banner()
     
-    print(f"{BD}This wizard helps you connect AI providers to BR0THER-H00D.{RS}")
+    print(f"{BD}This wizard helps you connect AI providers to BR0THERH00D.{RS}")
     print(f"Everything is optional — the system works without any keys.")
     print(f"\n{YL}Press Enter to skip any provider.{RS}\n")
     

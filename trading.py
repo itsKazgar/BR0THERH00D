@@ -1,5 +1,5 @@
 """
-trading.py — BR0THER-H00D Trading Engine
+trading.py — BR0THERH00D Trading Engine
 Rules:
 - Max 3 open trades at once
 - Max 20% of portfolio per trade

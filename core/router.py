@@ -127,6 +127,12 @@ def _weather_place(t):
 def route(user_input: str):
     """Return (brother_id, rewritten_command) or (None, None) if it's just chat."""
     low = user_input.lower()
+
+    # Prediction calls pass straight to crypto, unrewritten: "call SOL bullish"
+    if low.startswith("call ") or low.startswith("crypto call "):
+        cmd = user_input.lower().replace("crypto call", "call", 1).strip()
+        return "crypto", cmd
+
     # Explicit search/news verbs override topic-name matches (news on X, find X)
     news_words = ["news", "what's happening", "whats happening", "catch me up", "study ", "latest in"]
     force_alpha = any(w in low for w in news_words)

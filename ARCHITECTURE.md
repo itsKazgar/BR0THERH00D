@@ -1,4 +1,4 @@
-# Architecture — BR0THER-H00D
+# Architecture — BR0THERH00D
 
 A technical overview of how the system is put together: the components, how data
 flows, where decisions are made, and the deliberate trade-offs. Written to be

@@ -1,0 +1,77 @@
+"""
+PUMP BROTHER — live pump.fun launches. Free, no key.
+HONEST: this is a firehose of brand-new tokens. Most are noise or rugs.
+This shows what's LAUNCHING, never what's worth buying. Not financial advice.
+"""
+import os, sys, threading
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from core import personality
+
+NAME        = "Pump Brother"
+DESCRIPTION = "Live pump.fun launches — newest & trending. Raw activity, not buy signals."
+ENABLED     = True
+COMMANDS    = ["pump", "pump new", "pump trending", "whats launching", "new launches"]
+
+TRIGGERS = ["pump", "whats launching", "what's launching", "new launches",
+            "launching on solana", "new tokens", "pumpfun", "pump fun"]
+
+def _latest(limit=8):
+    try:
+        import market_data
+        return market_data.pumpfun_latest(limit)
+    except Exception as e:
+        print(f"  [pump] latest failed: {e}")
+        return []
+
+def _trending(limit=8):
+    try:
+        import market_data
+        return market_data.pumpfun_trending(limit)
+    except Exception as e:
+        print(f"  [pump] trending failed: {e}")
+        return []
+
+def _fmt_money(n):
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return "?"
+    if n >= 1_000_000:
+        return f"${n/1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"${n/1_000:.0f}K"
+    return f"${n:.0f}"
+
+def _format(title, coins):
+    if not coins:
+        return None
+    lines = [f"🚀 PUMP.FUN — {title}\n"]
+    for c in coins[:8]:
+        sym  = c.get("token", "?") or "?"
+        name = (c.get("name", "") or "")[:30]
+        mc   = _fmt_money(c.get("market_cap", 0))
+        rep  = c.get("replies", 0)
+        lines.append(f"• {sym:8} {name:30} mc {mc:>6}  💬{rep}")
+    lines.append("\n⚠️  Raw launches — mostly noise/risky. NOT buy signals. DYOR.")
+    return "\n".join(lines)
+
+def run(user_input):
+    lower = user_input.lower().strip()
+    if not any(lower.startswith(t) or t in lower for t in TRIGGERS):
+        return None
+
+    if "trending" in lower or "top" in lower:
+        coins = _trending()
+        out = _format("TRENDING", coins)
+    else:
+        coins = _latest()
+        out = _format("NEWEST LAUNCHES", coins)
+
+    if not out:
+        return "Couldn't reach pump.fun right now."
+
+    from core import council
+    council.inscribe("pump", f"pump launches: {out[:150]}", signal_type="intel")
+    threading.Thread(target=personality.evolve, args=("pump", f"{user_input}"), daemon=True).start()
+    return out
+

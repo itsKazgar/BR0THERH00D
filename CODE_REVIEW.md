@@ -1,4 +1,4 @@
-# BR0THER-H00D — full code review
+# BR0THERH00D — full code review
 
 Read file-by-file across the live code paths (API, trading, AI council, swap
 engine). Findings are concrete with `file:line`. Tagged by severity. Nothing was

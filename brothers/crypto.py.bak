@@ -1,11 +1,9 @@
-import requests, sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from core import learning
+import requests
 
 NAME        = "Crypto Brother"
 DESCRIPTION = "Live crypto prices and fear & greed index"
 ENABLED     = True
-COMMANDS    = ["price <symbol>", "sol", "fear", "greed", "call <symbol> bullish/bearish"]
+COMMANDS    = ["price <symbol>", "sol", "fear", "greed"]
 
 def _sol():
     try:
@@ -42,26 +40,6 @@ def _fg():
 
 def run(user_input):
     lower = user_input.lower().strip()
-
-    # ── A real, gradeable prediction. "call SOL bullish" / "call SOL bearish" ──
-    if lower.startswith("call "):
-        parts = lower.split()
-        if len(parts) >= 3:
-            sym = parts[1].upper()
-            direction = parts[2]
-            price = _sol() if sym == "SOL" else (_token(sym) or {}).get("price")
-            if not price:
-                return f"Couldn't price {sym} to make the call."
-            if direction not in ("bullish", "bearish"):
-                return "Say 'call <symbol> bullish' or 'call <symbol> bearish'."
-            claim = f"{sym} will be {'higher' if direction=='bullish' else 'lower'} in 24h"
-            pid = learning.predict(
-                brother="crypto", subject=sym, claim=claim,
-                metric="price", baseline=float(price), check_after_hours=24)
-            return (f"📣 CALL #{pid}: {sym} {direction} @ ${price:,.4f}\n"
-                    f"   Claim: {claim}. Gradeable in 24h. The Tome remembers.")
-        return "Usage: call <symbol> bullish   (or bearish)"
-
     if lower in ["sol", "solana", "sol price", "btc", "bitcoin", "eth", "ethereum"]:
         p = _sol()
         return f"◎ SOL: ${p:,.2f}" if p else "Could not fetch SOL."

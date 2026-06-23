@@ -26,7 +26,7 @@ ollama pull hermes-3-llama3.1-8b
 ollama serve &
 ```
 
-## Run BR0THER-H00D
+## Run BR0THERH00D
 ```bash
 python start.py
 ```

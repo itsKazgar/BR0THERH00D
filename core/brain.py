@@ -1,5 +1,5 @@
 """
-BRAIN — Shared memory layer for BR0THER-H00D collective.
+BRAIN — Shared memory layer for BR0THERH00D collective.
 SQLite-backed. All agents read/write through here.
 """
 import sqlite3, json, os, time

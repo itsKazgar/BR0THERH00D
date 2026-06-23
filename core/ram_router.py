@@ -95,7 +95,7 @@ def pick_best_model(prefer_tier=None):
 def print_status():
     result = pick_best_model()
     print("\n╔══════════════════════════════════════════╗")
-    print("║        BR0THER-H00D  Model Router        ║")
+    print("║        BR0THERH00D  Model Router        ║")
     print("╠══════════════════════════════════════════╣")
     print(f"║  RAM free   : {result['free_ram_gb']} GB")
     print(f"║  Tier       : {result['tier'] or 'none'}")

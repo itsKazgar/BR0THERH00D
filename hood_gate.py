@@ -1,6 +1,6 @@
 """
 hood_gate.py — $H00D Token Gate
-Checks if a wallet holds enough $H00D tokens to access BR0THER-H00D
+Checks if a wallet holds enough $H00D tokens to access BR0THERH00D
 """
 
 import os, httpx

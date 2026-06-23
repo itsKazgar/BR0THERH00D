@@ -117,28 +117,28 @@ PROVIDERS = {
         "key":    os.getenv("OPENROUTER_API_KEY", ""),
         "model":  "meta-llama/llama-3.1-8b-instruct:free",
         "format": "openai", "free": True, "min_ram": 0,
-        "headers": {"HTTP-Referer": "https://t.me/BR0THER-H00D", "X-Title": "BR0THER-H00D"},
+        "headers": {"HTTP-Referer": "https://t.me/BR0THERH00D", "X-Title": "BR0THERH00D"},
     },
     "openrouter_deepseek": {
         "url":    "https://openrouter.ai/api/v1/chat/completions",
         "key":    os.getenv("OPENROUTER_API_KEY", ""),
         "model":  "deepseek/deepseek-r1:free",
         "format": "openai", "free": True, "min_ram": 0,
-        "headers": {"HTTP-Referer": "https://t.me/BR0THER-H00D", "X-Title": "BR0THER-H00D"},
+        "headers": {"HTTP-Referer": "https://t.me/BR0THERH00D", "X-Title": "BR0THERH00D"},
     },
     "openrouter_gemma": {
         "url":    "https://openrouter.ai/api/v1/chat/completions",
         "key":    os.getenv("OPENROUTER_API_KEY", ""),
         "model":  "google/gemma-3-12b-it:free",
         "format": "openai", "free": True, "min_ram": 0,
-        "headers": {"HTTP-Referer": "https://t.me/BR0THER-H00D", "X-Title": "BR0THER-H00D"},
+        "headers": {"HTTP-Referer": "https://t.me/BR0THERH00D", "X-Title": "BR0THERH00D"},
     },
     "openrouter_qwen": {
         "url":    "https://openrouter.ai/api/v1/chat/completions",
         "key":    os.getenv("OPENROUTER_API_KEY", ""),
         "model":  "qwen/qwen3-8b:free",
         "format": "openai", "free": True, "min_ram": 0,
-        "headers": {"HTTP-Referer": "https://t.me/BR0THER-H00D", "X-Title": "BR0THER-H00D"},
+        "headers": {"HTTP-Referer": "https://t.me/BR0THERH00D", "X-Title": "BR0THERH00D"},
     },
 
     # ── OPTIONAL — Together AI ────────────────────────────────────────────────
@@ -428,7 +428,7 @@ def ask_cerebras_small(prompt, system):         return ask_ai(prompt, "trader", 
 
 if __name__ == "__main__":
     print(f"\n{'━'*62}")
-    print(f"  BR0THER-H00D AI Engine  |  RAM: {RAM_GB:.1f} GB")
+    print(f"  BR0THERH00D AI Engine  |  RAM: {RAM_GB:.1f} GB")
     print(f"{'━'*62}\n")
 
     ping  = "Reply with exactly one word: online"

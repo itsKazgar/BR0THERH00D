@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 def main():
     from brothers import load_all, _brothers, _ordered
     load_all()
-    print(f"🔺 BR0THER-H00D smoke test\n")
+    print(f"🔺 BR0THERH00D smoke test\n")
     print(f"  {len(_brothers)} brothers loaded\n")
 
     fails = 0

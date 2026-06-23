@@ -1,4 +1,4 @@
-# BR0THER-H00D — cleanup & upgrade plan
+# BR0THERH00D — cleanup & upgrade plan
 
 Based on tracing the actual import graph (not guesses).
 
