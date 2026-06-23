@@ -100,14 +100,18 @@ fi
 
 # ── .env setup ────────────────────────────────
 if [ ! -f ".env" ]; then
-    cp .env.example .env
+    if [ -f ".env.example" ]; then
+        cp .env.example .env
+    else
+        printf "GROQ_API_KEY=\nTELEGRAM_BOT_TOKEN=\nTELEGRAM_CHAT_ID=\nWALLET_ADDRESS=\nWALLET_PRIVATE_KEY=\nTRADE_MODE=paper\nSOLANA_RPC=\n" > .env
+    fi
     echo -e "${GR}✅ Created .env from template${RS}"
 else
     echo -e "${GR}✅ .env already exists${RS}"
 fi
 
 # ── RAM check for Hermes ──────────────────────
-FREE_RAM=$(free -m | awk '/^Mem:/{print $7}')
+FREE_RAM=$(free -m | awk '/^Mem:/{print $2}')
 echo ""
 echo -e "${BD}System check:${RS}"
 echo -e "  RAM available: ${FREE_RAM}MB"
@@ -155,22 +159,7 @@ fi
 
 echo ""
 echo -e "${BD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RS}"
-echo -e "${BD}  Step 2 — Telegram (get token from @BotFather) ${RS}"
-echo -e "${BD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RS}"
-read -p "  Telegram Bot Token (press Enter to skip): " TG_TOKEN
-if [ -n "$TG_TOKEN" ]; then
-    sed -i "s|^TELEGRAM_BOT_TOKEN=.*|TELEGRAM_BOT_TOKEN=$TG_TOKEN|" .env
-    echo -e "  ${GR}✅ Telegram token saved${RS}"
-fi
-read -p "  Telegram Chat ID (press Enter to skip): " TG_CHAT
-if [ -n "$TG_CHAT" ]; then
-    sed -i "s|^TELEGRAM_CHAT_ID=.*|TELEGRAM_CHAT_ID=$TG_CHAT|" .env
-    echo -e "  ${GR}✅ Telegram chat ID saved${RS}"
-fi
-
-echo ""
-echo -e "${BD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RS}"
-echo -e "${BD}  Step 3 — Solana Wallet                        ${RS}"
+echo -e "${BD}  Step 2 — Solana Wallet                        ${RS}"
 echo -e "${BD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RS}"
 echo "  [1] Create a new wallet"
 echo "  [2] Import existing private key"
@@ -220,6 +209,23 @@ PYEOF
     fi
 else
     echo -e "  ${YL}Skipped — paper trading mode${RS}"
+fi
+
+# ── Telegram (optional bonus) ─────────────────
+echo ""
+echo -e "${BD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RS}"
+echo -e "${BD}  Step 3 — Telegram alerts (optional)           ${RS}"
+echo -e "${BD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RS}"
+echo -e "  ${YL}Skip this if you don't need trade notifications.${RS}"
+read -p "  Telegram Bot Token (press Enter to skip): " TG_TOKEN
+if [ -n "$TG_TOKEN" ]; then
+    sed -i "s|^TELEGRAM_BOT_TOKEN=.*|TELEGRAM_BOT_TOKEN=$TG_TOKEN|" .env
+    echo -e "  ${GR}✅ Telegram token saved${RS}"
+    read -p "  Telegram Chat ID: " TG_CHAT
+    if [ -n "$TG_CHAT" ]; then
+        sed -i "s|^TELEGRAM_CHAT_ID=.*|TELEGRAM_CHAT_ID=$TG_CHAT|" .env
+        echo -e "  ${GR}✅ Telegram chat ID saved${RS}"
+    fi
 fi
 
 # ── Done ──────────────────────────────────────
