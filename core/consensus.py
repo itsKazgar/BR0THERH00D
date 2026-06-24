@@ -228,6 +228,102 @@ def _vote_scanner(coin: dict, score: int) -> dict:
     return {"vote": score >= 62, "conf": score,
             "reason": f"scanner score {score}/100"}
 
+
+# ── Rule-based fallbacks for AI seats ────────────────────────────────────
+# These mirror the exact thresholds already written into each persona's
+# system prompt in agent_personas.py (QUANT, EXEC, CHAIN, GUARDIAN). They
+# exist so a debate doesn't lose a seat entirely when AI is rate-limited
+# or out of credits — instead of "ERROR" defaulting to a block (or silently
+# skipping), the seat falls back to the same numeric logic a human already
+# decided was the right call. If a real model answers, ITS judgment is
+# still used — these only fire when AI genuinely can't be reached.
+
+def _vote_quant_rules(coin: dict) -> dict:
+    """Mirrors QUANT's prompt: vol/liq ratio >300% = wash trading risk,
+    buy pressure >65% = real accumulation, FDV >$500M on a meme = dump risk."""
+    liq = coin.get("liquidity", 0) or 0
+    vol = coin.get("volume_24h", 0) or 0
+    buys = coin.get("buys_1h", 0) or 0
+    sells = coin.get("sells_1h", 0) or 0
+    fdv = coin.get("mcap", 0) or 0
+
+    vol_liq_pct = (vol / liq * 100) if liq > 0 else 9999
+    total_txns = buys + sells
+    buy_pressure_pct = (buys / total_txns * 100) if total_txns > 0 else 50
+
+    flags = []
+    if vol_liq_pct > 300:
+        flags.append(f"vol/liq {vol_liq_pct:.0f}% — wash trading risk")
+    if fdv > 500_000_000:
+        flags.append(f"FDV ${fdv:,.0f} too large for a meme")
+
+    if flags:
+        return {"vote": False, "conf": 60, "reason": "rule-fallback: " + "; ".join(flags)}
+    if buy_pressure_pct > 65:
+        return {"vote": True, "conf": 65,
+                "reason": f"rule-fallback: buy pressure {buy_pressure_pct:.0f}% — real accumulation"}
+    return {"vote": True, "conf": 45,
+            "reason": f"rule-fallback: vol/liq {vol_liq_pct:.0f}%, no major flags"}
+
+
+def _vote_exec_rules(coin: dict) -> dict:
+    """Mirrors EXEC's prompt: only trade if a clean entry with defined risk
+    can be specced — needs real liquidity and not already wildly extended."""
+    liq = coin.get("liquidity", 0) or 0
+    ch1h = coin.get("change_1h", 0) or 0
+
+    if liq < 6_000:
+        return {"vote": False, "conf": 55,
+                "reason": f"rule-fallback: liq ${liq:,.0f} too thin for a clean entry"}
+    if ch1h > 900:
+        return {"vote": False, "conf": 55,
+                "reason": f"rule-fallback: already extended {ch1h:.0f}% — bad entry timing"}
+    return {"vote": True, "conf": 55,
+            "reason": "rule-fallback: clean entry specable — size 3-13%, TP/SL per config"}
+
+
+def _vote_chain_rules(coin: dict) -> dict:
+    """Mirrors CHAIN's prompt: top 10 holders >60% = rug risk, buy/sell txn
+    count diverging hard from volume = wash trading."""
+    concentration = coin.get("top10_pct")
+    buys = coin.get("buys_1h", 0) or 0
+    sells = coin.get("sells_1h", 0) or 0
+
+    if concentration is not None and concentration > 60:
+        return {"vote": False, "conf": 65,
+                "reason": f"rule-fallback: top10 holders {concentration:.0f}% — rug risk"}
+
+    total_txns = buys + sells
+    if total_txns > 0:
+        sell_pct = sells / total_txns * 100
+        if sell_pct > 70:
+            return {"vote": False, "conf": 55,
+                    "reason": f"rule-fallback: sells {sell_pct:.0f}% of txns — distribution, not accumulation"}
+
+    return {"vote": True, "conf": 40,
+            "reason": "rule-fallback: no concentration red flags in available data"}
+
+
+def _vote_guardian_ai_rules(coin: dict) -> dict:
+    """Mirrors GUARDIAN's hard rules directly — this is the AI-judgment
+    half of the fused Queen seat; RiskManager (_vote_risk_manager) already
+    covers the same rules independently, so this fallback is intentionally
+    conservative-but-not-redundant: it re-checks the same hard limits so
+    the fused vote still requires two independent passes even when AI
+    is down, rather than silently collapsing to a single check."""
+    liq = coin.get("liquidity", 0) or 0
+    sells = coin.get("sells_1h", 0) or 0
+    buys = coin.get("buys_1h", 0) or 0
+    ch24h = coin.get("change_24h", 0) or 0
+
+    if liq < 6_000:
+        return {"vote": False, "conf": 70, "reason": f"rule-fallback: liq ${liq:,.0f} < $6K floor"}
+    if buys > 0 and sells > buys * 2:
+        return {"vote": False, "conf": 65, "reason": "rule-fallback: sells >2x buys"}
+    if ch24h > 2000:
+        return {"vote": False, "conf": 60, "reason": f"rule-fallback: up {ch24h:.0f}% in 24h — too extended"}
+    return {"vote": True, "conf": 55, "reason": "rule-fallback: hard rules clear"}
+
 # ── Main vote function ────────────────────────────
 def council_vote(coin: dict, score: int, reasons: list, portfolio_cash: float = 0) -> dict:
     """

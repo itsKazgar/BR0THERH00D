@@ -38,9 +38,11 @@ fits — not arbitrary, each tier maps to real weight in the final tally):
 import asyncio
 from datetime import datetime
 from core import brain
+import ai_engine
 from core.consensus import (
     _vote_analyst, _vote_risk_manager, _vote_whale_tracker, _vote_pump_hunter,
     _vote_memory_keeper, _vote_news_scout, _vote_scanner, _vote_venue, _vote_sizer,
+    _vote_quant_rules, _vote_exec_rules, _vote_chain_rules, _vote_guardian_ai_rules,
 )
 from agent_personas import get_persona, COUNCIL_CONFIG
 from collective import run_agent
@@ -104,18 +106,30 @@ def _fuse_guardian_risk(ai_results: dict, coin: dict, score: int) -> dict:
     yes — neither overrides the other; either one raising a flag is a real
     flag. This is stricter than either alone, which is correct for the
     single highest-weighted non-veto-adjacent risk seat on the board.
+
+    When AI wasn't called for "risk" (provider unhealthy), GUARDIAN's half
+    falls back to the same hard rules from its own prompt instead of an
+    empty result silently defaulting to PASS — keeps this seat a genuine
+    two-check fuse even when no model answered.
     """
-    guardian = ai_results.get("risk", {})
-    g_decision = str(guardian.get("decision", "PASS")).upper()
-    g_vote = g_decision == "TRADE"
-    g_reason = guardian.get("thesis", "") or guardian.get("reasoning", "")
+    if "risk" in ai_results:
+        guardian = ai_results.get("risk", {})
+        g_decision = str(guardian.get("decision", "PASS")).upper()
+        g_vote = g_decision == "TRADE"
+        g_reason = guardian.get("thesis", "") or guardian.get("reasoning", "")
+        g_conf = guardian.get("confidence", 50)
+    else:
+        g_fallback = _vote_guardian_ai_rules(coin)
+        g_vote = g_fallback["vote"]
+        g_reason = g_fallback["reason"]
+        g_conf = g_fallback["conf"]
 
     rm = _vote_risk_manager(coin, score)
     rm_vote = rm["vote"]
     rm_reason = rm["reason"]
 
     fused_vote = g_vote and rm_vote
-    fused_conf = round((guardian.get("confidence", 50) + rm["conf"]) / 2)
+    fused_conf = round((g_conf + rm["conf"]) / 2)
 
     if not fused_vote:
         bad = []
@@ -168,18 +182,40 @@ async def unified_vote(coin: dict, score: int, reasons: list, prompt: str,
             "avg_confidence": 0,
         }
 
-    # AI-backed seats run in parallel (real model calls) — same agents as
-    # before, minus "income" (YIELD), which is deliberately excluded.
-    ai_personas = ["intel", "analyst", "trader", "risk", "onchain", "security"]
+    # AI-backed seats run in parallel (real model calls). SEER (narrative
+    # reading) and REAPER (rug pattern judgment) always try AI — that's
+    # genuine qualitative judgment, not rule-convertible. QUANT, EXEC,
+    # CHAIN, and GUARDIAN's AI half are largely re-deriving numeric
+    # thresholds that are already written out in their own prompts, so
+    # when no AI provider is currently healthy (rate-limited / out of
+    # credits), they skip the API call entirely and use a rule-based
+    # fallback matching those same thresholds instead — saves the calls
+    # for the two seats that actually need a model, and never blocks a
+    # debate on API problems alone. If a provider IS healthy, the real
+    # model answer is still used — rules are a fallback, not a downgrade.
+    ai_is_healthy = ai_engine.any_ai_provider_healthy()
+
+    if ai_is_healthy:
+        ai_personas = ["intel", "analyst", "trader", "risk", "onchain", "security"]
+    else:
+        ai_personas = ["intel", "security"]  # only the non-convertible seats
     ai_results = await _run_ai_personas(prompt, ai_personas)
 
     name_map = {"intel": "SEER", "analyst": "QUANT", "trader": "EXEC",
                 "risk": "GUARDIAN", "onchain": "CHAIN", "security": "REAPER"}
 
     votes = {}
+    rule_fallback_map = {
+        "QUANT": lambda: _vote_quant_rules(coin),
+        "EXEC":  lambda: _vote_exec_rules(coin),
+        "CHAIN": lambda: _vote_chain_rules(coin),
+    }
     for key, display_name in name_map.items():
         if display_name == "GUARDIAN":
             continue  # handled by the fused Queen seat below, not standalone
+        if key not in ai_results and display_name in rule_fallback_map:
+            votes[display_name] = rule_fallback_map[display_name]()
+            continue
         r = ai_results.get(key, {})
         decision = str(r.get("decision", "PASS")).upper()
         votes[display_name] = {

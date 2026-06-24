@@ -15,6 +15,49 @@ def _ram():
 
 RAM_GB = _ram()
 
+# =============================================================================
+# PROVIDER HEALTH — lets a caller ask "is it worth even trying AI right now?"
+# without spending a call to find out. Free-tier accounts (rate limits,
+# zero credits) fail in clusters, not in isolation — once we've seen a
+# couple of failures in a short window, the next several calls are almost
+# certainly going to fail too. Tracking this lets cheap rule-based seats
+# skip straight to their fallback instead of burning a slow timeout-and-fail
+# cycle on every single debate. Resets quickly (60s) so a real recovery
+# (credits added, rate limit window clears) is picked back up automatically
+# — this is a short-lived circuit breaker, not a permanent downgrade.
+# =============================================================================
+_provider_health = {}   # name -> {"fail_count": int, "last_fail": ts}
+_HEALTH_FAIL_THRESHOLD = 2     # consecutive recent fails before we call it "down"
+_HEALTH_RESET_SECONDS  = 60    # how long a "down" mark lasts before retrying
+
+def mark_provider_failed(name: str):
+    h = _provider_health.setdefault(name, {"fail_count": 0, "last_fail": 0})
+    h["fail_count"] += 1
+    h["last_fail"] = time.time()
+
+def mark_provider_ok(name: str):
+    if name in _provider_health:
+        _provider_health[name] = {"fail_count": 0, "last_fail": 0}
+
+def provider_likely_down(name: str) -> bool:
+    h = _provider_health.get(name)
+    if not h or h["fail_count"] < _HEALTH_FAIL_THRESHOLD:
+        return False
+    if time.time() - h["last_fail"] > _HEALTH_RESET_SECONDS:
+        mark_provider_ok(name)
+        return False
+    return True
+
+def any_ai_provider_healthy() -> bool:
+    """Quick check used by rule-capable seats: is ANY configured provider
+    currently worth trying, or are they all in a recent-failure cooldown?
+    """
+    configured = [n for n in PROVIDERS if provider_available(n)]
+    if not configured:
+        return False
+    return any(not provider_likely_down(n) for n in configured)
+
+
 def _key_env(name):
     mapping = {
         "groq":        "GROQ_API_KEY",
@@ -587,9 +630,12 @@ def call_provider(name: str, prompt: str, system: str, max_tokens: int = 600) ->
                 if r.status_code != 429:
                     break
             if r.status_code == 429:
+                mark_provider_failed(name)
                 raise Exception(f"{name}: rate limited")
         if r.status_code != 200:
+            mark_provider_failed(name)
             raise Exception(f"{name}: HTTP {r.status_code} — {r.text[:120]}")
+        mark_provider_ok(name)
         msg = r.json()["choices"][0]["message"]
         text = (msg.get("content") or msg.get("reasoning_content", "")).strip()
         text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
