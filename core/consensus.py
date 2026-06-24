@@ -52,7 +52,13 @@ def _vote_risk_manager(coin: dict, score: int) -> dict:
     vol   = coin.get("volume_24h", 0)
 
     flags = []
-    if age > 48:          flags.append(f"too old ({age:.0f}h)")
+    # age_hrs comes back as 9999 when the data source has no pairCreatedAt
+    # timestamp (common for established tokens like JUP, not just missing
+    # data on junk) — that's "unknown," not "ancient." Treating it as
+    # ancient was vetoing legitimate established tokens. Only flag a real,
+    # known age over the threshold.
+    if 0 < age <= 999 and age > 48:
+        flags.append(f"too old ({age:.0f}h)")
     if liq < 6_000:       flags.append(f"thin liq (${liq:,.0f})")
     if ch1h > 900:         flags.append(f"already pumped {ch1h:.0f}%")
     if mcap > 50_000_000: flags.append(f"mcap too large (${mcap:,.0f})")
