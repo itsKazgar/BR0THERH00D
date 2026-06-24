@@ -577,8 +577,17 @@ def call_provider(name: str, prompt: str, system: str, max_tokens: int = 600) ->
         }
         r = requests.post(p["url"], headers=hdrs, json=payload, timeout=45)
         if r.status_code == 429:
-            time.sleep(2)
-            raise Exception(f"{name}: rate limited")
+            # One sleep-and-giveup wasn't enough — free-tier rate limits often
+            # need several seconds to clear, and giving up after 2s meant
+            # almost every call during a busy debate cycle failed outright.
+            # Retry twice with growing backoff before truly giving up.
+            for wait in (5, 12):
+                time.sleep(wait)
+                r = requests.post(p["url"], headers=hdrs, json=payload, timeout=45)
+                if r.status_code != 429:
+                    break
+            if r.status_code == 429:
+                raise Exception(f"{name}: rate limited")
         if r.status_code != 200:
             raise Exception(f"{name}: HTTP {r.status_code} — {r.text[:120]}")
         msg = r.json()["choices"][0]["message"]

@@ -81,9 +81,16 @@ async def _run_ai_personas(prompt: str, ai_personas: list) -> dict:
     """Runs the AI-backed personas (SEER, QUANT, EXEC, GUARDIAN, CHAIN,
     REAPER) in parallel, same mechanism collective.py already used and
     tested — not rewritten, just reused so we don't risk regressing
-    something that already works."""
+    something that already works.
+
+    Stagger widened from 0.3s to 1.5s — 6 calls landing within ~2s was
+    blowing through free-tier Groq's per-minute rate limit every cycle,
+    causing the AI seats to fall back to defaults instead of real
+    judgment. Spreading them out reduces collisions without making a
+    single debate noticeably slower (adds ~7.5s worst case across 6 calls).
+    """
     async def _run(agent, i):
-        await asyncio.sleep(i * 0.3)
+        await asyncio.sleep(i * 1.5)
         result = await run_agent(agent, prompt)
         return agent, result
 
