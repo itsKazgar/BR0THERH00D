@@ -531,6 +531,7 @@ async def debate_token(signal, trader_instance):
     """
     token = signal["token"]
     if token in debated:
+        print(f"  [SKIP] {token} — already debated this cycle window (cooldown active)")
         return
     debated.add(token)
 
@@ -832,10 +833,17 @@ async def run_engine():
                 log.error("Full cycle error: %s", e)
                 print(f"[FULL ERROR] {e}")
 
-        # clear debated cache every 2hrs so tokens get re-evaluated
-        if STATS["cycles"] % 120 == 0:
+        # clear debated cache periodically so rejected tokens get re-evaluated
+        # once their situation may have changed. DEBATED_CACHE_CYCLES default
+        # (~20min at typical cycle speed) matches the bot's own 20-30min hold
+        # window — the old 120-cycle (~2hr) value left tokens locked out for
+        # far longer than the timeframe the bot actually trades on, so a
+        # rejected token's liquidity/whale/narrative picture could change
+        # several times before it was ever reconsidered.
+        debated_cache_cycles = int(os.getenv("DEBATED_CACHE_CYCLES", "20"))
+        if STATS["cycles"] % debated_cache_cycles == 0:
             debated.clear()
-            print("[SYSTEM] Debated cache cleared — tokens eligible for re-evaluation")
+            print(f"[SYSTEM] Debated cache cleared ({debated_cache_cycles} cycles) — tokens eligible for re-evaluation")
 
         if not RUNNING:
             break

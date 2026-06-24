@@ -32,12 +32,22 @@ def fetch_token_data(token):
         p = sol_pairs[0] if sol_pairs else (pairs[0] if pairs else None)
         if not p:
             return {"error": "No pairs found"}
+        raw_fdv = p.get("fdv")
+        # Sanity cap: DexScreener occasionally returns a garbage FDV for
+        # tokens with unusual supply mechanics (seen live: a real, legitimate
+        # token showing an ~$8 TRILLION FDV — clearly bad upstream data, not
+        # a real figure). Total crypto market cap has never exceeded a few
+        # trillion; one token at $8T is definitionally an API/data error, not
+        # a number worth reasoning about. Capping it to None means downstream
+        # FDV-based checks correctly treat it as "unknown" rather than as a
+        # real, absurdly-bearish signal that taints the council's reasoning.
+        fdv = raw_fdv if (raw_fdv is not None and 0 <= raw_fdv < 1_000_000_000_000) else None
         return {
             "token": token,
             "price": p.get("priceUsd"),
             "volume_24h": p.get("volume", {}).get("h24"),
             "liquidity": p.get("liquidity", {}).get("usd"),
-            "fdv": p.get("fdv"),
+            "fdv": fdv,
             "chain": p.get("chainId"),
             "dex": p.get("dexId"),
             "pair": p.get("pairAddress"),

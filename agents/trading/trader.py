@@ -228,7 +228,8 @@ class Trader:
   {DM}📈 Total PnL {RS}  {pnl_color}{BD}${self.total_pnl:+.2f}{RS}
   {DM}🔁 Trades    {RS}  {BD}{self.trades}{RS}
   {DM}🧠 AI mode   {RS}  {__import__("core.llm", fromlist=["status"]).status()}
-  {DM}🎯 TP / SL   {RS}  {GR}+{TAKE_PROFIT_PCT*100:.0f}%{RS} / {RD}-{STOP_LOSS_PCT*100:.0f}%{RS}
+  {DM}🎯 Exit mode {RS}  {GR}Tiered+trailing{RS} (33%@+5%, 40%@+12%, ride rest) / {RD}-{STOP_LOSS_PCT*100:.0f}% SL{RS}
+  {DM}🚀 Ride mode  {RS}  Strong entries (deep liq+clean rug+high conf) earn 2x hold time while winning
   {DM}⏱  Max hold  {RS}  {MAX_HOLD_MINS} mins
   {DM}📐 Sizing    {RS}  {BD}6-13% confidence-scaled  |  max {MAX_TRADE_PCT*100:.0f}%{RS}
   {DM}🔒 Gas guard {RS}  {RD}◎{SOL_GAS_RESERVE} SOL reserved (live)  /  ${FEE_RESERVE_USD:.2f} (paper){RS}
@@ -458,6 +459,21 @@ class Trader:
             hold_cap = MAX_HOLD_MINS
             mode_tag = "📈 SWING"
 
+        # Earn extra hold-time leash for genuinely strong entries — deep
+        # liquidity AND clean rug score AND high council confidence. This
+        # does NOT extend a losing or flat position's life; check_positions()
+        # only consults this flag once a position is already past the base
+        # cap AND still winning (see "ride_extension" below) — a weak entry
+        # still gets force-sold at the normal cap regardless of this flag.
+        # Different coins, different approach: a thin anonymous pump and a
+        # deep-liquidity clean-rug high-confidence coin shouldn't get the
+        # same fixed leash.
+        ride_extension = (
+            liq >= 75_000 and
+            coin.get("rug_score", coin.get("risk", {}).get("risk_score", 100)) < 15 and
+            confidence >= 75
+        )
+
         sol_size_str = ""
         if self.sol_price > 0:
             sol_size_str = f"  ◎{usd_to_sol(size_usd, self.sol_price):.4f} SOL"
@@ -498,6 +514,7 @@ class Trader:
             "tp":         tp,
             "sl":         sl,
             "hold_cap":   hold_cap,
+            "ride_extension": ride_extension,
             "score":      score,
             "sources":    coin.get("sources", []),
             "confidence": confidence,
@@ -821,7 +838,22 @@ class Trader:
 
             # ── Max hold time ─────────────────────────────────
             pos_hold_cap = pos.get("hold_cap", MAX_HOLD_MINS)
-            if held_mins >= pos_hold_cap:
+            past_cap = held_mins >= pos_hold_cap
+            if past_cap and pos.get("ride_extension") and pnl_pct > 2:
+                # Earned extra rope at entry (deep liq + clean rug + high
+                # confidence) AND still winning right now — let it ride past
+                # the normal cap. The trailing stop above is still live and
+                # will catch it the moment it actually turns; this only
+                # delays the unconditional time-based sell, it doesn't
+                # disable downside protection.
+                extended_cap = pos_hold_cap * 2
+                if held_mins < extended_cap:
+                    pass  # let it keep riding — trailing stop remains active
+                else:
+                    cooldown[mint] = {"ts": time.time(), "mins": COOLDOWN_HOLD}
+                    self.sell(mint, f"max hold (extended) {extended_cap}min")
+                    continue
+            elif past_cap:
                 cooldown[mint] = {"ts": time.time(), "mins": COOLDOWN_HOLD}
                 self.sell(mint, f"max hold {pos_hold_cap}min")
                 continue
