@@ -53,19 +53,25 @@ def _vote_risk_manager(coin: dict, score: int) -> dict:
 
     flags = []
     if age > 48:          flags.append(f"too old ({age:.0f}h)")
-    if liq < 10_000:      flags.append(f"thin liq (${liq:,.0f})")
-    if ch1h > 600:         flags.append(f"already pumped {ch1h:.0f}%")
+    if liq < 6_000:       flags.append(f"thin liq (${liq:,.0f})")
+    if ch1h > 900:         flags.append(f"already pumped {ch1h:.0f}%")
     if mcap > 50_000_000: flags.append(f"mcap too large (${mcap:,.0f})")
-    if vol < 20_000:      flags.append(f"low vol (${vol:,.0f})")
+    if vol < 8_000:       flags.append(f"low vol (${vol:,.0f})")
 
-    # Block trades in bearish market conditions
+    # Bearish market sentiment used to be a hard veto trigger at 5/5 signals
+    # regardless of how good the trade otherwise looked. That's too blunt —
+    # crypto fear/greed swings hard and a bot that won't trade in "Extreme
+    # Fear" misses real setups, not just bad ones. Now it only adds a flag
+    # at the most extreme reading (5/5) AND only if the token's own score is
+    # mediocre — a genuinely strong setup (score>=70) can clear a fearful
+    # market on its own merits instead of being blocked by macro mood alone.
     sent_mems = brain.recall(type="sentiment", limit=5)
     bearish_count = 0
     for m in sent_mems:
         c = m["content"].lower()
         if "bearish" in c or "fear" in c or "dumping" in c:
             bearish_count += 1
-    if bearish_count >= 5 and score < 85:
+    if bearish_count >= 5 and score < 70:
         flags.append(f"bearish market ({bearish_count}/5 signals bearish)")
 
     # Check recent risk alerts from brain
