@@ -311,6 +311,234 @@ AGENT_PROVIDERS = {
 }
 
 # =============================================================================
+# LIVE PROVIDER DISCOVERY (additive, never replaces the manual chains above)
+# ─────────────────────────────────────────────────────────────────────────────
+# At startup, probes every company in _DISCOVERY_REGISTRY that has a key set
+# in .env, fetches its live /models list, scores each model, and INSERTS the
+# best 1-2 discovered models at the FRONT of each role's AGENT_PROVIDERS chain.
+#
+# Guarantees:
+#   - Discovery NEVER removes or replaces a manual/static entry. Worst case
+#     (no keys, no network, every provider down) AGENT_PROVIDERS is identical
+#     to the hand-written list above and the bot runs exactly as before.
+#   - Adding a brand-new AI company later = one line in _DISCOVERY_REGISTRY.
+#     No other code changes needed; existing manual chains are untouched.
+#   - This block can be deleted entirely and ai_engine.py still works, because
+#     nothing below depends on it — ask_ai() only ever reads AGENT_PROVIDERS.
+# =============================================================================
+
+import threading as _threading
+
+# name -> (api_base_url, env_var_for_key, auth_style)
+# auth_style: "bearer" (Authorization: Bearer <key>), "anthropic" (x-api-key
+# header), "param" (?key=<key> in query string), or "none" (no key needed).
+_DISCOVERY_REGISTRY = {
+    "groq":        ("https://api.groq.com/openai/v1",                "GROQ_API_KEY",       "bearer"),
+    "openrouter":  ("https://openrouter.ai/api/v1",                   "OPENROUTER_API_KEY", "bearer"),
+    "openai":      ("https://api.openai.com/v1",                      "OPENAI_API_KEY",     "bearer"),
+    "anthropic":   ("https://api.anthropic.com/v1",                   "ANTHROPIC_API_KEY",  "anthropic"),
+    "mistral":     ("https://api.mistral.ai/v1",                      "MISTRAL_API_KEY",    "bearer"),
+    "cerebras":    ("https://api.cerebras.ai/v1",                     "CEREBRAS_API_KEY",   "bearer"),
+    "together":    ("https://api.together.xyz/v1",                   "TOGETHER_API_KEY",   "bearer"),
+    "cohere":      ("https://api.cohere.com/v1",                      "COHERE_API_KEY",     "bearer"),
+    "xai":         ("https://api.x.ai/v1",                            "XAI_API_KEY",        "bearer"),
+    "gemini":      ("https://generativelanguage.googleapis.com/v1beta","GEMINI_API_KEY",    "param"),
+    "perplexity":  ("https://api.perplexity.ai",                      "PERPLEXITY_API_KEY", "bearer"),
+    "deepseek":    ("https://api.deepseek.com/v1",                    "DEEPSEEK_API_KEY",   "bearer"),
+    "fireworks":   ("https://api.fireworks.ai/inference/v1",          "FIREWORKS_API_KEY",  "bearer"),
+    "ollama":      ("http://localhost:11434/v1",                      "",                   "none"),
+    # ── To add a brand-new provider later, just add one line here: ──────────
+    # "newco":     ("https://api.newco.com/v1",                       "NEWCO_API_KEY",      "bearer"),
+}
+
+# Per-role preferences — used only to decide WHICH discovered company's model
+# gets inserted first for a given role. If a preferred company has no key,
+# it's skipped; if NONE of a role's preferred companies are available, the
+# role's manual chain is left completely untouched (no insertion happens).
+_ROLE_DISCOVERY_PREFS = {
+    "default":      ["anthropic","openai","groq","openrouter","mistral","cerebras","deepseek","xai","gemini","perplexity","together","cohere","fireworks","ollama"],
+    "orchestrator": ["anthropic","openai","xai","deepseek","groq","openrouter","cerebras","mistral","gemini","ollama"],
+    "analyst":      ["openai","anthropic","deepseek","xai","groq","openrouter","mistral","cerebras","gemini","ollama"],
+    "intel":        ["groq","openrouter","perplexity","xai","mistral","cerebras","together","deepseek","ollama"],
+    "trader":       ["groq","cerebras","openrouter","together","mistral","deepseek","ollama"],
+    "risk":         ["anthropic","openai","deepseek","xai","groq","openrouter","cerebras","mistral","ollama"],
+    "security":     ["anthropic","openai","deepseek","xai","groq","openrouter","cerebras","mistral","ollama"],
+    "coder":        ["openai","anthropic","deepseek","groq","openrouter","mistral","xai","cerebras","ollama"],
+    "research":     ["perplexity","anthropic","openai","deepseek","xai","groq","openrouter","mistral","ollama"],
+    "onchain":      ["groq","cerebras","openrouter","together","mistral","deepseek","ollama"],
+    "income":       ["groq","cerebras","openrouter","together","mistral","deepseek","ollama"],
+}
+
+# Keyword scoring — higher score = presumed smarter/better model. This is a
+# heuristic over model-ID strings, nothing more; it can't know about models
+# that don't follow common naming conventions, but it degrades gracefully
+# (unscored/unknown models just rank low, never crash, never get excluded
+# outright unless they match the embedding/audio/image-only blocklist).
+def _score_discovered_model(model_id: str) -> int:
+    m = model_id.lower()
+    if any(x in m for x in ("embed", "whisper", "tts", "dall-e", "vision-only",
+                             "rerank", "moderation", "audio")):
+        return -1  # not a chat model — never use for council voting
+    score = 0
+    for kw, pts in (("405b",20),("claude-opus",19),("opus-4",19),("gpt-5",18),
+                    ("claude-3-5",17),("claude-sonnet",16),("o3",16),("o1",15),
+                    ("70b",13),("72b",13),("gpt-4o",13),("gpt-4",11),
+                    ("deepseek-r1",12),("32b",10),("34b",10),("mixtral",9),
+                    ("gemini-pro",9),("sonnet",9),("haiku",6),("flash",6),
+                    ("mini",5),("8b",5),("7b",5),("small",4),
+                    ("instruct",2),("chat",2),("versatile",2)):
+        if kw in m:
+            score += pts
+    if any(x in m for x in ("preview","beta","alpha","experimental")):
+        score -= 2
+    return score
+
+
+class _Discovery:
+    """Holds discovery results. One instance, built once at import time."""
+    def __init__(self):
+        self.live_models   = {}   # company -> [(score, model_id), ...] best-first
+        self.provider_cfgs = {}   # company -> (base_url, key, auth_style)
+        self.ran           = False
+
+    def run(self, timeout=6):
+        if self.ran:
+            return self.live_models
+        results, lock = {}, _threading.Lock()
+
+        def probe(company, base_url, key_env, auth_style):
+            key = os.getenv(key_env, "") if key_env else ""
+            if auth_style != "none" and (not key or len(key) < 8):
+                return
+            if not base_url:
+                return
+            models = self._fetch(company, base_url, key, auth_style, timeout)
+            if models:
+                with lock:
+                    results[company] = models
+                    self.provider_cfgs[company] = (base_url, key, auth_style)
+
+        threads = [
+            _threading.Thread(target=probe, args=(c, b, k, a), daemon=True)
+            for c, (b, k, a) in _DISCOVERY_REGISTRY.items()
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=timeout + 2)
+
+        self.live_models = results
+        self.ran = True
+        return results
+
+    @staticmethod
+    def _fetch(company, base_url, key, auth_style, timeout):
+        try:
+            headers, params = {}, {}
+            if auth_style == "bearer":
+                headers["Authorization"] = f"Bearer {key}"
+            elif auth_style == "anthropic":
+                headers["x-api-key"] = key
+                headers["anthropic-version"] = "2023-06-01"
+            elif auth_style == "param":
+                params["key"] = key
+
+            r = requests.get(base_url.rstrip("/") + "/models",
+                              headers=headers, params=params, timeout=timeout)
+            if r.status_code != 200:
+                return []
+            data = r.json()
+            items = data.get("data", data.get("models", data)) if isinstance(data, dict) else data
+            if not isinstance(items, list):
+                return []
+            scored = []
+            for m in items:
+                mid = m.get("id") or m.get("name") or m.get("model", "")
+                if not mid:
+                    continue
+                s = _score_discovered_model(mid)
+                if s >= 0:
+                    scored.append((s, mid))
+            scored.sort(reverse=True)
+            return scored
+        except Exception:
+            return []  # network error, bad key, provider down — just skip it
+
+
+_discovery = _Discovery()
+
+
+def _register_discovered_provider(company: str, model_id: str) -> str:
+    """Adds a discovered model into PROVIDERS so call_provider() can use it.
+    Returns the key name to insert into an AGENT_PROVIDERS chain."""
+    base_url, key, auth_style = _discovery.provider_cfgs.get(company, ("", "", "bearer"))
+    key_name = f"{company}_live_{re.sub(r'[^a-zA-Z0-9]', '_', model_id)[:30]}"
+    if key_name not in PROVIDERS:  # don't re-register if already present
+        PROVIDERS[key_name] = {
+            "url":     base_url.rstrip("/") + "/chat/completions",
+            "key":     key,
+            "model":   model_id,
+            "format":  "anthropic" if company == "anthropic" else "openai",
+            "free":    False,
+            "min_ram": 0,
+        }
+    return key_name
+
+
+def discover_and_extend_providers(verbose: bool = True):
+    """
+    Probe every configured company, then PREPEND the best live model(s) to
+    each role's AGENT_PROVIDERS chain. Static/manual entries are never
+    removed — they just move later in the priority order. If discovery
+    finds nothing at all (no keys set, fully offline), this is a no-op and
+    AGENT_PROVIDERS stays exactly as hand-written above.
+    """
+    live = _discovery.run()
+    if not live:
+        if verbose:
+            print("  [AI] No live providers discovered — running on manual chains only")
+        return
+
+    if verbose:
+        print(f"  [AI] Live providers online: {', '.join(sorted(live.keys()))}")
+        for company in sorted(live.keys()):
+            best = live[company][0][1] if live[company] else "?"
+            print(f"       {company:12} best model: {best}")
+
+    for role, prefs in _ROLE_DISCOVERY_PREFS.items():
+        manual_chain = AGENT_PROVIDERS.get(role, AGENT_PROVIDERS["default"])
+        inserted = []
+        for company in prefs:
+            models = live.get(company, [])
+            if not models:
+                continue
+            # take the single best model from the first 1-2 available
+            # preferred companies — keeps chains short and fast, while still
+            # giving each role access to whatever's actually online.
+            key = _register_discovered_provider(company, models[0][1])
+            if key not in manual_chain:
+                inserted.append(key)
+            if len(inserted) >= 2:
+                break
+        if inserted:
+            AGENT_PROVIDERS[role] = inserted + manual_chain
+
+    if verbose:
+        print(f"  [AI] Discovery-augmented {len(_ROLE_DISCOVERY_PREFS)} role chains "
+              f"(manual chains kept as fallback, never removed)")
+
+
+# Run discovery now, at import time. Wrapped in try/except as a final
+# safety net: even if something inside discovery throws (a bug, a weird
+# API response shape, anything), ai_engine.py must still import cleanly
+# and AGENT_PROVIDERS must still be usable — manual mode always works.
+try:
+    discover_and_extend_providers()
+except Exception as _e:
+    logger.warning(f"[AI] Discovery failed, continuing on manual chains: {_e}")
+
+
+# =============================================================================
 # AVAILABILITY CHECK — silently skips anything without a key or enough RAM
 # =============================================================================
 

@@ -30,6 +30,7 @@ pydantic
 # --- data feeds / scraping ---
 feedparser
 beautifulsoup4
+ddgs
 
 # --- solana / crypto ---
 solders

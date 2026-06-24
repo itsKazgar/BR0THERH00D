@@ -23,6 +23,8 @@ COUNCIL = [
     {"name": "Memory Keeper", "weight": 2, "role": "past lessons"},
     {"name": "News Scout",    "weight": 1, "role": "sentiment"},
     {"name": "Scanner",       "weight": 1, "role": "signal source"},
+    {"name": "Venue",         "weight": 2, "role": "pool/DEX venue risk"},
+    {"name": "Sizer",         "weight": 2, "role": "price-impact of our exact size"},
 ]
 
 VOTES_NEEDED = 7  # weighted votes needed to pass
@@ -148,13 +150,74 @@ def _vote_news_scout(coin: dict) -> dict:
     return {"vote": True, "conf": 55,
             "reason": f"neutral/bullish sentiment"}
 
+def _vote_venue(coin: dict) -> dict:
+    """Votes based on which DEX/pool this token trades on. An established
+    venue (Raydium, a real AMM with a track record) carries less structural
+    risk than a brand-new or unrecognized pool — separate from whether the
+    TOKEN itself looks like a rug (that's REAPER/Risk Manager's job); this
+    is specifically about the trading venue's own track record.
+    """
+    dex = (coin.get("dex") or "?").lower()
+
+    TRUSTED = {"raydium", "orca", "meteora", "lifinity"}
+    KNOWN_RISKY = {"pumpfun_new", "gecko_new", "new_listing"}
+
+    if dex in TRUSTED:
+        return {"vote": True, "conf": 80,
+                "reason": f"established venue ({dex})"}
+    if dex in KNOWN_RISKY or dex == "?":
+        return {"vote": False, "conf": 55,
+                "reason": f"unverified/new venue ({dex}) — no track record"}
+    # Anything else (pumpfun, birdeye, gecko, etc.) — real venues, just not
+    # in the "most established" tier. Mild positive, not a red flag.
+    return {"vote": True, "conf": 60,
+            "reason": f"known venue ({dex}), not top-tier but tracked"}
+
+
+def _vote_sizer(coin: dict, portfolio_cash: float) -> dict:
+    """Checks REAL price impact for the position size we'd actually commit,
+    via a live Jupiter quote — not an absolute liquidity threshold like
+    other voters use, but the specific question: would OUR trade, at OUR
+    size, move the price before it even finishes filling?
+
+    Uses the worst-case size estimate (MAX_TRADE_PCT of portfolio) since the
+    actual chosen size only ever scales down from there based on confidence
+    — if the worst case is fine, the real (smaller-or-equal) trade is too.
+    This is the gap nothing else checks: liquidity floors are absolute
+    dollar thresholds, this is relative to what we're actually about to do.
+    """
+    mint = coin.get("mint", "")
+    if not mint or portfolio_cash <= 0:
+        return {"vote": True, "conf": 50, "reason": "no mint/cash to check — skipping"}
+
+    try:
+        from core import jupiter
+        max_size_usd = portfolio_cash * 0.15  # MAX_TRADE_PCT ceiling from trader.py
+        quote, err = jupiter.get_quote(jupiter.SOL_MINT, mint, max_size_usd)
+        if err or not quote:
+            return {"vote": False, "conf": 45,
+                    "reason": f"no route at our size (${max_size_usd:.0f}): {err}"}
+        impact = float(quote.get("priceImpactPct", 0) or 0)
+        if impact > 0.05:
+            return {"vote": False, "conf": 70,
+                    "reason": f"would move price {impact:.1%} at our size — too thin for us specifically"}
+        if impact > 0.03:
+            return {"vote": True, "conf": 50,
+                    "reason": f"moderate impact {impact:.1%} at our size — workable but tight"}
+        return {"vote": True, "conf": 75,
+                "reason": f"clean fill, {impact:.1%} impact at our size"}
+    except Exception as e:
+        return {"vote": True, "conf": 40,
+                "reason": f"sizer check unavailable ({e}) — not blocking on it alone"}
+
+
 def _vote_scanner(coin: dict, score: int) -> dict:
     """Scanner always votes — it found the signal."""
     return {"vote": score >= 62, "conf": score,
             "reason": f"scanner score {score}/100"}
 
 # ── Main vote function ────────────────────────────
-def council_vote(coin: dict, score: int, reasons: list) -> dict:
+def council_vote(coin: dict, score: int, reasons: list, portfolio_cash: float = 0) -> dict:
     """
     Run the full brotherhood vote.
     Returns {
@@ -182,6 +245,8 @@ def council_vote(coin: dict, score: int, reasons: list) -> dict:
         "Memory Keeper": _vote_memory_keeper(coin),
         "News Scout":    _vote_news_scout(coin),
         "Scanner":       _vote_scanner(coin, score),
+        "Venue":         _vote_venue(coin),
+        "Sizer":         _vote_sizer(coin, portfolio_cash),
     }
 
     results   = []

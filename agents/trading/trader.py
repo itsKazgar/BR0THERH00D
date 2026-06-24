@@ -325,7 +325,18 @@ class Trader:
 
     # ── BUY ────────────────────────────────────────────────
 
-    def buy(self, coin: dict, score: int, reasons: list):
+    def buy(self, coin: dict, score: int, reasons: list, pre_approved: dict = None):
+        """
+        pre_approved: pass the unified council's verdict dict here when the
+        caller (Start.py's debate_token()) already ran the full council
+        before calling buy() — skips the redundant internal vote below.
+        Leave as None (default) for callers that DON'T pre-clear a trade
+        through any council first — check_watchlist()/check_signals() below
+        call buy() directly with no upstream vote, so they still need this
+        method's own council_vote() to run as their only safety gate. This
+        keeps both call paths protected without voting twice for the path
+        that already voted once.
+        """
         mint = coin.get("mint")
         name = coin.get("name")
 
@@ -369,10 +380,18 @@ class Trader:
                   f"(balance ${self.balance:.2f}{sol_str})")
             return
 
-        council    = council_vote(coin, score, reasons)
+        if pre_approved is not None:
+            # Already cleared by the unified council before buy() was
+            # called — skip the redundant second vote, use that verdict.
+            council = pre_approved
+        else:
+            # No upstream council ran (check_watchlist()/check_signals()
+            # call buy() directly) — this is the only safety gate for
+            # those paths, so it must run.
+            council = council_vote(coin, score, reasons, portfolio_cash=self.balance)
         if not council["approved"]:
             brain.remember("trader",
-                f"COUNCIL REJECTED {name} | {council['summary']}",
+                f"COUNCIL REJECTED {name} | {council.get('summary', council.get('reason', ''))}",
                 type="rejected", tags=f"{name.lower()},rejected")
             return
 
@@ -380,7 +399,8 @@ class Trader:
         analyst_r  = next((r for r in council["results"] if r["agent"] == "Analyst"), {})
         confidence = analyst_r.get("conf", score)
         thesis     = ", ".join(reasons[:3]) if reasons else f"council approved {council['votes_for']} votes"
-        risk_agent = next((r for r in council["results"] if r["agent"] == "Risk Manager"), {})
+        risk_agent = next((r for r in council["results"]
+                            if r["agent"] in ("Risk Manager", "GUARDIAN+RiskMgr")), {})
         risk       = risk_agent.get("reason", "")
         ai_buy     = True
         mode       = decision.get("mode", "rules")
@@ -555,6 +575,28 @@ class Trader:
         name      = pos["name"]
         held_mins = round((time.time() - pos.get("open_ts", time.time())) / 60, 1)
 
+        # Close the reward/punishment loop: tell the exit council whether
+        # its last recommendation on this position actually helped. Never
+        # blocks a sell if this fails — it's purely a learning side-effect.
+        try:
+            from core.exit_consensus import record_outcome
+            record_outcome(pos, pnl_pct, pos.get("last_exit_vote", "no_change"))
+        except Exception:
+            pass
+
+        # Resolve every council seat's entry-time vote on this exact token
+        # against the real outcome — this is what lets each seat (REAPER,
+        # SEER, GUARDIAN, etc) build its own honest track record instead of
+        # carrying the same fixed influence forever.
+        try:
+            brain.resolve_seat_votes(name, pnl_pct)
+            from core.persona_evolution import maybe_add_lesson
+            from core.unified_council import BOARD
+            for seat_name in BOARD:
+                maybe_add_lesson(seat_name)  # no-ops unless a REAL pattern exists
+        except Exception:
+            pass
+
         self.history.append({
             "name":      name,
             "mint":      mint,
@@ -657,6 +699,30 @@ class Trader:
                 new_sl = pos["entry"] * 1.005 # tiny lock at +1.5%
             else:
                 new_sl = pos["sl"]
+
+            # ── Exit council — advisory layer on top of the math above.
+            # Re-checks whale activity, narrative strength, and thesis drift
+            # on this OPEN position (entries get a full council vote; until
+            # this, exits never did). Can only nudge the stop by a small,
+            # capped amount in either direction — the hardcoded math above
+            # is always the floor; this never overrides it outright, and if
+            # it errors or returns nothing useful, behavior is unchanged.
+            try:
+                from core.exit_consensus import exit_vote
+                ev = exit_vote(pos, {"buys": buys, "sells": sells, "vol_1h": vol_1h})
+                pos["last_exit_vote"] = ev["action"]  # remembered for record_outcome() at close
+                if ev["action"] == "hold_longer":
+                    new_sl = new_sl * (1 - ev["stop_adjust_pct"] / 100 * -1)  # loosen
+                elif ev["action"] == "cut_sooner":
+                    new_sl = new_sl * (1 + ev["stop_adjust_pct"] / 100)       # tighten
+                if ev["action"] != "no_change":
+                    print(f"  [exit-council] {pos['name']} → {ev['action']} "
+                          f"({ev['weighted_for_pct']:.0f}% for, trust={ev['trust_multiplier']}x) "
+                          f"| {ev['reason'][:70]}")
+            except Exception as e:
+                pos["last_exit_vote"] = "no_change"
+                print(f"  [exit-council] unavailable, using standard trailing stop only: {e}")
+
             if new_sl > pos["sl"]:
                 pos["sl"] = round(new_sl, 10)
                 print(f"  [trader] 📈 {pos['name']} stop locked → ${pos['sl']:.8f} ({pnl_pct:+.1f}%)")

@@ -6,9 +6,14 @@ No API keys, no accounts needed.
 
 import requests
 import re
+import sys
+import os
 import time
 from xml.etree import ElementTree as ET
 from datetime import datetime
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "."))
+from core import brain
 
 RSS_FEEDS = {
     "CoinDesk":      ("https://www.coindesk.com/arc/outboundfeeds/rss/", "news"),
@@ -17,6 +22,7 @@ RSS_FEEDS = {
     "TheBlock":      ("https://www.theblock.co/rss.xml",                 "news"),
 }
 
+INTERVAL = 300  # 5 minutes between scans
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 CA_PATTERN     = re.compile(r'\b[1-9A-HJ-NP-Za-km-z]{32,44}\b')
@@ -155,29 +161,57 @@ def format_signal(s):
     print(f"  {s['date']}")
 
 
-if __name__ == "__main__":
-    print("BR0THA SOCIAL SCANNER — free RSS mode\n")
+def persist_signals(signals):
+    """Write each matched narrative/symbol signal to brain so the council
+    (and build_thesis()) can actually use it. Previously this data only
+    ever printed to a console and vanished — nothing else in the system
+    could see it."""
+    for s in signals:
+        if s["symbols"]:
+            for sym in s["symbols"][:3]:
+                msg = f"${sym}: {s['title'][:120]}"
+                brain.remember("social_scanner", msg,
+                    type="narrative", tags=",".join(s["narratives"] or ["general"]))
+        elif s["narratives"]:
+            msg = f"{', '.join(s['narratives'])}: {s['title'][:120]}"
+            brain.remember("social_scanner", msg,
+                type="narrative", tags=",".join(s["narratives"]))
+
+
+def run():
+    print(f"BR0THA SOCIAL SCANNER — free RSS mode\n")
     print(f"Watching {len(RSS_FEEDS)} feeds: {', '.join(RSS_FEEDS.keys())}")
+    print(f"Interval: {INTERVAL}s  |  Press Ctrl+C to stop\n")
 
     while True:
-        print(f"\n[{datetime.utcnow().strftime('%H:%M:%S')} UTC] Scanning feeds...")
-        signals, new = scan_social()
-        print(f"  {new} new items | {len(signals)} signals")
+        try:
+            print(f"\n[{datetime.utcnow().strftime('%H:%M:%S')} UTC] Scanning feeds...")
+            signals, new = scan_social()
+            print(f"  {new} new items | {len(signals)} signals")
 
-        # Narrative summary
-        narrative_counts = {}
-        for s in signals:
-            for n in s["narratives"]:
-                narrative_counts[n] = narrative_counts.get(n, 0) + 1
-        if narrative_counts:
-            top = sorted(narrative_counts.items(), key=lambda x: x[1], reverse=True)[:4]
-            print(f"  📊 trending: {', '.join([f'{k}x{v}' for k,v in top])}")
+            persist_signals(signals)
 
-        for s in signals[:5]:
-            format_signal(s)
+            narrative_counts = {}
+            for s in signals:
+                for n in s["narratives"]:
+                    narrative_counts[n] = narrative_counts.get(n, 0) + 1
+            if narrative_counts:
+                top = sorted(narrative_counts.items(), key=lambda x: x[1], reverse=True)[:4]
+                print(f"  📊 trending: {', '.join([f'{k}x{v}' for k,v in top])}")
 
-        if not signals:
-            print("  Nothing significant detected.")
+            for s in signals[:5]:
+                format_signal(s)
 
-        print(f"\n  Next scan in 5 min...")
-        time.sleep(300)
+            if not signals:
+                print("  Nothing significant detected.")
+        except KeyboardInterrupt:
+            print("\n[social_scanner] stopped.")
+            break
+        except Exception as e:
+            print(f"  [social] error: {e}")
+
+        time.sleep(INTERVAL)
+
+
+if __name__ == "__main__":
+    run()

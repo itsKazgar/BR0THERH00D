@@ -133,18 +133,37 @@ def fetch_pump_coins(url):
     return out[:20]
 
 def fetch_pump_profiles():
-    """Freshest pump.fun launches via DexScreener token profiles."""
+    """Freshest pump.fun launches via DexScreener token profiles.
+
+    Returns {mint: {"description": str, "twitter": str, "website": str}} —
+    this is the closest thing to a real "thesis" source available: what the
+    project itself says it is, not just its price stats. Previously this
+    function fetched the same data and threw the description/links away,
+    keeping only the bare mint address.
+    """
     data = get(PUMP_FUN_PROFILES)
     if not data:
-        return []
-    mints = []
+        return {}
+    profiles = {}
     for x in data:
         if x.get("chainId") != "solana":
             continue
         mint = x.get("tokenAddress", "")
-        if mint:
-            mints.append(mint)
-    return mints[:30]
+        if not mint:
+            continue
+        links = x.get("links", []) or []
+        twitter = next((l.get("url","") for l in links if l.get("type")=="twitter"
+                         or "twitter.com" in l.get("url","") or "x.com" in l.get("url","")), "")
+        website = next((l.get("url","") for l in links if l.get("type")=="website"), "") \
+                  or x.get("url", "")
+        profiles[mint] = {
+            "description": (x.get("description") or "")[:300],
+            "twitter":      twitter,
+            "website":      website,
+        }
+        if len(profiles) >= 30:
+            break
+    return profiles
 
 def fetch_coingecko_trending():
     data = get(COINGECKO_TRENDING)
@@ -355,11 +374,12 @@ def scan_once():
         candidates[mint]["sources"].append(f"smart_wallet:{item['wallet']}")
 
     # Source 4: fresh pump.fun launches via token profiles — fetch BEFORE scoring
-    pump_profile_mints = fetch_pump_profiles()
-    for mint in pump_profile_mints:
+    pump_profiles = fetch_pump_profiles()
+    for mint, profile in pump_profiles.items():
         if mint not in candidates:
             candidates[mint] = {"sources": []}
         candidates[mint]["sources"].append("pump_fresh")
+        candidates[mint]["profile"] = profile
 
     # Source 5: brand new pairs (< 6h old)
     new_pair_mints = fetch_new_pairs()
@@ -380,6 +400,13 @@ def scan_once():
         if garbage:
             continue
         sc, sig, reasons = score_coin(d, meta["sources"])
+        # Attach real project description/links if we have them (from
+        # pump.fun token profiles) — this is what lets a "thesis" actually
+        # describe what the project claims to be, not just restate price stats.
+        profile = meta.get("profile", {})
+        d["description"] = profile.get("description", "")
+        d["twitter"]      = profile.get("twitter", "")
+        d["website"]      = profile.get("website", "")
         results.append({
             "d": d, "score": sc, "sig": sig,
             "reasons": reasons, "sources": meta["sources"]

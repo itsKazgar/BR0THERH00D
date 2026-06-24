@@ -186,6 +186,9 @@ def pumpfun_latest(limit=20):
                 "liquidity":  c.get("virtual_sol_reserves", 0),
                 "replies":    c.get("reply_count", 0),
                 "created_at": c.get("created_timestamp", ""),
+                "description": (c.get("description") or "")[:300],
+                "twitter":    c.get("twitter", ""),
+                "website":    c.get("website", ""),
                 "source":     "pumpfun"
             })
         return results
@@ -211,6 +214,9 @@ def pumpfun_trending(limit=20):
                 "name":       c.get("name", ""),
                 "market_cap": c.get("usd_market_cap", 0),
                 "replies":    c.get("reply_count", 0),
+                "description": (c.get("description") or "")[:300],
+                "twitter":    c.get("twitter", ""),
+                "website":    c.get("website", ""),
                 "source":     "pumpfun_trending"
             })
         return results

@@ -160,7 +160,6 @@ def close_position(pos, current_price, reason):
     """Close a position and record PnL."""
     entry       = pos["entry_price"]
     tokens      = pos["tokens_held"]
-    moon_bag    = pos["moon_bag_tokens"]
     size_usd    = pos["size_usd"]
 
     if reason == "TP":
@@ -171,7 +170,6 @@ def close_position(pos, current_price, reason):
         sell_value  = tokens * current_price
         pnl_usd     = sell_value - size_usd
         pnl_pct     = ((current_price - entry) / entry) * 100
-        moon_value  = 0
         print(f"  [PAPER] 🎯 TP HIT {pos['token']} @ ${current_price:.8f} (+{pnl_pct:.1f}%)")
         print(f"          Sold {tokens:.2f} tokens for ${sell_value:.2f} | PnL: ${pnl_usd:+.2f}")
         cash_back = sell_value
@@ -180,7 +178,6 @@ def close_position(pos, current_price, reason):
         sell_value  = tokens * current_price
         pnl_usd     = sell_value - size_usd
         pnl_pct     = ((current_price - entry) / entry) * 100
-        moon_value  = 0
         print(f"  [PAPER] 🔴 {'SL' if reason=='SL' else 'EXIT'} {pos['token']} @ ${current_price:.8f} ({pnl_pct:+.1f}%)")
         print(f"          Got back ${sell_value:.2f} | PnL: ${pnl_usd:+.2f}")
         cash_back = sell_value
@@ -274,6 +271,7 @@ def print_dashboard():
 ╠══════════════════════════════════════════════════╣
 ║ Starting Capital:  $1000.00                     ║
 ║ Cash Available:    ${cash:>10.2f}                     ║
+║ Portfolio Value:   ${portfolio_value:>10.2f}                     ║
 ║ Open Positions:    {len(positions):>3}                          ║
 ║ Total PnL:         ${total_pnl:>+10.2f}                     ║
 ║ Win Rate:          {win_rate:>6.1f}% ({wins}W / {losses}L)              ║

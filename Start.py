@@ -94,6 +94,50 @@ try:
 except (ValueError, AttributeError):
     pass
 
+# ── intel workers ────────────────────────────────────────────────────────────
+# These run continuously in the background, writing whale_alert / pump_gem /
+# sentiment / risk_alert memories into brain.db. Without them running, the
+# corresponding council voters (Whale Tracker, Pump Hunter, News Scout, Risk
+# Manager) always vote on stale or absent data — the voting logic was never
+# broken, it just had nothing to look at. Modes 2 and 3 start these; mode 1
+# (solo, no council) skips them since nothing would consume their output.
+INTEL_WORKERS = [
+    ("whale_tracker",  os.path.join("agents", "intel", "whale_tracker.py")),
+    ("pump_hunter",    os.path.join("agents", "intel", "pump_hunter.py")),
+    ("news_scout",     os.path.join("agents", "intel", "news_scout.py")),
+    ("risk_manager",   os.path.join("agents", "intel", "risk_manager.py")),
+    ("memory_keeper",  os.path.join("agents", "intel", "memory_keeper.py")),
+    ("social_scanner", os.path.join("social_scanner.py")),
+]
+
+def start_intel_workers():
+    """Launch each intel worker as a background subprocess. A worker that
+    fails to start (missing file, bad interpreter, etc.) is logged and
+    skipped — it must never block the main trading loop from running."""
+    print(DM + "  Starting intel workers (whale/pump/news/risk/memory)..." + RS)
+    started = []
+    for name, rel_path in INTEL_WORKERS:
+        full_path = os.path.join(ROOT, rel_path)
+        if not os.path.exists(full_path):
+            print(YL + f"  ⚠️  {name} not found at {rel_path} — skipping" + RS)
+            continue
+        try:
+            proc = subprocess.Popen(
+                [PYTHON, full_path],
+                cwd=ROOT,
+                stdout=open(os.path.join(ROOT, "logs", f"{name}.log"), "a"),
+                stderr=subprocess.STDOUT,
+            )
+            _subprocess_procs.append((proc, name))
+            started.append(name)
+        except Exception as e:
+            print(YL + f"  ⚠️  {name} failed to start: {e}" + RS)
+    if started:
+        print(GR + f"  ✅ {len(started)} intel workers running: {', '.join(started)}" + RS)
+        print(DM + f"     (logs: logs/<worker>.log)" + RS)
+    else:
+        print(YL + "  ⚠️  No intel workers started — council will vote on limited data" + RS)
+
 # ── runtime stats ──────────────────────────────────────────────────────────────
 STATS = {
     "started": time.time(), "cycles": 0, "full_scans": 0,
@@ -495,29 +539,57 @@ async def debate_token(signal, trader_instance):
     signal["fear_greed"] = fg
     STATS["debates"] += 1
 
+    # Build coin dict compatible with both Trader.buy() and the unified
+    # council's rule/memory voters (VENUE, SIZER, Risk Manager, etc need
+    # this BEFORE voting, not after — built here, used for both).
+    coin = {
+        "name":        token,
+        "mint":        md.get("mint", signal.get("mint", "")),
+        "price":       md.get("price", 0),
+        "mcap":        md.get("mcap", 0),
+        "age_hrs":     get_token_age_hours(md.get("mint", signal.get("mint", ""))),
+        "liquidity":   md.get("liquidity", 0),
+        "volume_24h":  md.get("volume", 0),
+        "volume_1h":   md.get("volume_1h", 0),
+        "change_1h":   md.get("change_24h", 0),
+        "change_5m":   md.get("change_5m", 0),
+        "buys_1h":     md.get("buys_1h", 0),
+        "sells_1h":    md.get("sells_1h", 0),
+        "sources":     [signal.get("source", "loop")],
+        # Real project text — what it claims to be, not just price stats.
+        # Previously captured upstream by scanner.py/market_data.py and
+        # silently dropped here before ever reaching a council vote.
+        "description": md.get("description", signal.get("description", "")),
+        "twitter":     md.get("twitter", signal.get("twitter", "")),
+        "website":     md.get("website", signal.get("website", "")),
+        # Which DEX/pool this trades on — also captured upstream, also
+        # silently dropped here before. Feeds the VENUE voter.
+        "dex":         md.get("dex", signal.get("dex", "?")),
+    }
+
+    score   = int(signal.get("score", signal.get("momentum_score", 70)))
+    reasons = signal.get("signals", [signal.get("thesis", {}).get("summary", "alpha engine approved")])
+
     if USE_COUNCIL:
         prompt = build_prompt(signal)
         cash   = float(trader_instance.balance)
         try:
-            result = await collective_debate(
-                task=prompt,
-                token=token,
-                token_data=md,
-                portfolio_cash=cash
+            from core.unified_council import unified_vote
+            verdict = await unified_vote(
+                coin, score, reasons[:5], prompt, portfolio_cash=cash
             )
         except Exception as e:
             log.error(f"Council failed for {token}: {e}")
             print(f"  [ERROR] Council failed: {e}")
             return
 
-        verdict = result["verdict"]
         if not verdict["approved"]:
             print(f"  [PASS] {token} — {verdict['reason']}")
             return
 
-        agents_voted = verdict["trade_count"]
+        agents_voted = verdict["votes_for"]
         confidence   = verdict["avg_confidence"]
-        print(f"\n  [COUNCIL] ✅ {token} approved — {agents_voted} agents, conf={confidence}%")
+        print(f"\n  [COUNCIL] ✅ {token} approved — {agents_voted}/13 seats, conf={confidence}%")
     else:
         # Solo mode: auto-approve anything that survived alpha + rug filter
         agents_voted = 1
@@ -526,29 +598,13 @@ async def debate_token(signal, trader_instance):
 
     STATS["trades"] += 1
 
-    # Build coin dict compatible with Trader.buy()
-    coin = {
-        "name":       token,
-        "mint":       md.get("mint", signal.get("mint", "")),
-        "price":      md.get("price", 0),
-        "mcap":       md.get("mcap", 0),
-        "age_hrs":    get_token_age_hours(md.get("mint", signal.get("mint", ""))),
-        "liquidity":  md.get("liquidity", 0),
-        "volume_24h": md.get("volume", 0),
-        "volume_1h":  md.get("volume_1h", 0),
-        "change_1h":  md.get("change_24h", 0),
-        "change_5m":  md.get("change_5m", 0),
-        "buys_1h":    md.get("buys_1h", 0),
-        "sells_1h":   md.get("sells_1h", 0),
-        "sources":    [signal.get("source", "loop")],
-    }
-
-    score   = int(signal.get("score", confidence))
-    reasons = signal.get("signals", [signal.get("thesis", {}).get("summary", "alpha engine approved")])
-
     # Hand off to the sophisticated Trader — it handles sizing, TP/SL tiers,
-    # trailing stop, cooldowns, blacklist, brain.learn() feedback, Telegram alerts
-    trader_instance.buy(coin, score, reasons[:5])
+    # trailing stop, cooldowns, blacklist, brain.learn() feedback, Telegram alerts.
+    # pre_approved=verdict (when USE_COUNCIL) tells buy() to skip its own
+    # internal council_vote() — the unified council above already cleared
+    # this trade once; voting again would just re-ask the same question.
+    trader_instance.buy(coin, score, reasons[:5],
+                         pre_approved=verdict if USE_COUNCIL else None)
 
 # ── enrichment helper ──────────────────────────────────────────────────────────
 async def _enrich_and_filter(signal):
@@ -568,6 +624,27 @@ async def _enrich_and_filter(signal):
 
     rug      = check_rug_risk(token, enriched)
     momentum = get_momentum_signal(enriched)
+
+    # Pull any recent narrative memories that specifically mention this
+    # token's symbol — social_scanner.py writes these from real RSS news,
+    # tagged by narrative category (ai_meta, meme_meta, etc). Without this
+    # lookup, a thesis can never know "this coin is riding the AI narrative
+    # this week" even when social_scanner already found exactly that.
+    try:
+        from core import brain as _brain
+        narrative_mems = _brain.recall(type="narrative", limit=20)
+        matched = set()
+        for m in narrative_mems:
+            content = m.get("content", "")
+            if f"${token.upper()}" in content.upper() or token.upper() in content.upper():
+                for tag in (m.get("tags") or "").split(","):
+                    if tag.strip():
+                        matched.add(tag.strip())
+        if matched:
+            enriched["narratives"] = sorted(matched)
+    except Exception:
+        pass  # narrative lookup is a bonus signal, never block enrichment on it
+
     thesis   = build_thesis(token, enriched, rug, momentum)
 
     age_hours = get_token_age_hours(mint) if mint else 999.0
@@ -810,6 +887,7 @@ def main():
         PAPER_TRADE = True
         USE_COUNCIL = True
         print(CY + BD + "  MODE 2 — Paper + 8-Agent Council\n" + RS)
+        start_intel_workers()
         _import_engine()
         try:
             asyncio.run(run_engine())
@@ -838,6 +916,7 @@ def main():
         USE_COUNCIL = True
         print()
         print(MG + BD + "  MODE 3 — LIVE Trading + Full Council\n" + RS)
+        start_intel_workers()
         _import_engine()
         try:
             asyncio.run(run_engine())

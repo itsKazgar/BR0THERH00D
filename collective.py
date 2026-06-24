@@ -44,9 +44,15 @@ def extract_json(raw_text):
 # [FIX] retries once on JSON parse failure instead of voting PASS at 0%
 async def run_agent(agent_name, task):
     persona = get_persona(agent_name)
+    system_text = persona['system']
+    try:
+        from core.persona_evolution import get_evolved_system_prompt
+        system_text = get_evolved_system_prompt(persona['name'], system_text)
+    except Exception:
+        pass  # evolution lookup failing should never block a vote
     prompt = f"""You are {persona['name']}.
 ROLE: {persona['role']}
-SYSTEM: {persona['system']}
+SYSTEM: {system_text}
 TASK: {task}
 Return ONLY valid JSON, no markdown, no commentary.
 Format: {{"agent": "{persona['name']}", "decision": "TRADE|HOLD|PASS", "confidence": 0-100, "thesis": "one sentence", "reasoning": "two sentences"}}"""
@@ -88,16 +94,7 @@ def tally_votes(results, agent_keys):
 
     for key, r in zip(agent_keys, results):
         w = get_weight(key)
-<<<<<<< HEAD
         decision = (r.get("decision") or "ERROR").upper()
-=======
-        decision = r.get("decision", "PASS").upper()
-        is_veto_agent = key in cfg["veto_agents"]
-        if is_veto_agent and confidence == 0.0:
-            return {"approved": False, "reason": f"{key} errored — fail-closed veto",
-                    "trade_count": 0, "total_agents": len(agent_keys),
-                    "weighted_pct": 0, "avg_confidence": 0}
->>>>>>> 6384798 (fix: REAPER model slug, fail-closed veto, paper_trades write)
         if decision == "TRADE":
             trade_weight += w
             trade_count += 1
@@ -166,7 +163,6 @@ def log_votes(token, agent_keys, results):
 
 def print_council(token, results, agent_keys, verdict):
     lines = [f"\n[COUNCIL] ══════════════════════════════════ {token}"]
-    total_w = sum(get_weight(k) for k in agent_keys)
     for key, r in zip(agent_keys, results):
         decision = r.get("decision", "?").upper()
         conf = r.get("confidence", 0)

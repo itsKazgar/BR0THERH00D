@@ -187,6 +187,9 @@ def build_market():
             "fdv": mcap, "buy_pressure": 1.0,
             "buys": 0, "sells": 0, "dex": "pumpfun",
             "replies": pf.get("replies", 0),
+            "description": pf.get("description", ""),
+            "twitter": pf.get("twitter", ""),
+            "website": pf.get("website", ""),
             "source": "pumpfun_trending"
         })
 
@@ -204,6 +207,9 @@ def build_market():
             "volume": 0, "liquidity": float(pl.get("liquidity") or 0),
             "fdv": float(pl.get("market_cap") or 0), "buy_pressure": 1.0,
             "buys": 0, "sells": 0, "dex": "pumpfun_new",
+            "description": pl.get("description", ""),
+            "twitter": pl.get("twitter", ""),
+            "website": pl.get("website", ""),
             "source": "pumpfun_new",
             "new_listing": True
         })

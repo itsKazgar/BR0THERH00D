@@ -9,10 +9,14 @@ from core import brain
 INTERVAL = 60  # check every 60s
 CY='\033[96m'; GR='\033[92m'; RS='\033[0m'; BD='\033[1m'
 
+HELIUS_API_KEY = os.getenv("HELIUS_API_KEY", "")
+HELIUS_URL = "https://api.helius.xyz/v0"
+
 # Known smart wallet addresses (add more as you find them)
 SMART_WALLETS = [
     "GVXRSBjFk6e6J3NbVPXohDJetcTjaeeuykUpbQF68Eq",  # known profitable trader
     "5tzFkiKscXHK5ZXCGbGuPuggf6B5uG3DMFN9Z9UXQXRH",  # another whale
+    "GA2dvcJrKZnL64tWyVCBiwexDH1qTofESKQzSxWUfGRd",  # tracked wallet
 ]
 
 def get(url, timeout=8):
@@ -24,22 +28,61 @@ def get(url, timeout=8):
         pass
     return None
 
-def check_wallet_trades(wallet):
-    """Get recent trades from a smart wallet via DexScreener"""
-    data = get(f"https://api.dexscreener.com/latest/dex/search?q={wallet}")
-    if not data:
+def get_helius_transactions(wallet, limit=10):
+    """Pull a smart wallet's recent on-chain activity directly from Helius
+    (more reliable for tracking a SPECIFIC wallet than a DexScreener search)."""
+    if not HELIUS_API_KEY:
         return []
+    url = f"{HELIUS_URL}/addresses/{wallet}/transactions"
+    params = {"api-key": HELIUS_API_KEY, "limit": limit}
+    try:
+        r = requests.get(url, params=params, timeout=8)
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        print(f"[whale_tracker] Helius error for {wallet}: {e}")
+        return []
+
+def check_wallet_trades(wallet):
+    """Get recent trades from a smart wallet. Checks Helius for real
+    on-chain swap activity (precise, keyed to this exact wallet) AND
+    DexScreener for volume context — both feed the alert, neither excludes
+    the other, since they answer different questions (did they trade? /
+    is the token they're trading hot?)."""
     trades = []
-    for pair in (data.get("pairs") or [])[:5]:
-        name = pair.get("baseToken", {}).get("symbol", "?")
-        mint = pair.get("baseToken", {}).get("address", "")
-        vol  = float(pair.get("volume", {}).get("h1", 0) or 0)
-        if vol > 5000:
-            trades.append({"name": name, "mint": mint, "vol": vol})
+
     helius_txns = get_helius_transactions(wallet)
     for txn in helius_txns:
-        t=txn.get("type","?"); s=txn.get("source","?"); sig=txn.get("signature","")[:12]; print(f"  [Helius] {wallet[:6]}.. | {t} via {s} | {sig}..")
+        t   = txn.get("type", "?")
+        s   = txn.get("source", "?")
+        sig = txn.get("signature", "")[:12]
+        desc = txn.get("description", "")
+        print(f"  [Helius] {wallet[:6]}.. | {t} via {s} | {sig}..")
+        if "swap" in desc.lower() or "swap" in t.lower():
+            trades.append({"name": "?", "mint": "", "vol": 0, "raw": desc or f"{t} via {s}"})
+
+    data = get(f"https://api.dexscreener.com/latest/dex/search?q={wallet}")
+    if data:
+        for pair in (data.get("pairs") or [])[:5]:
+            name = pair.get("baseToken", {}).get("symbol", "?")
+            mint = pair.get("baseToken", {}).get("address", "")
+            vol  = float(pair.get("volume", {}).get("h1", 0) or 0)
+            if vol > 5000:
+                trades.append({"name": name, "mint": mint, "vol": vol})
+
     return trades
+
+def check_smart_wallets():
+    """Check every wallet in SMART_WALLETS for recent activity and write
+    a whale_alert memory if anything's happening — this is what actually
+    makes consensus.py's Whale Tracker vote mean something."""
+    for wallet in SMART_WALLETS:
+        trades = check_wallet_trades(wallet)
+        for t in trades:
+            label = t.get("name") or t.get("raw", "activity")
+            msg = f"smart wallet {wallet[:8]}... moved: {label}"
+            brain.remember("whale_tracker", msg, type="whale_alert", tags="whale,smart_wallet")
+            print(f"  🐋 smart wallet alert: {msg}")
 
 def scan_trending_for_whales():
     """Look at trending coins and flag ones with whale-level volume"""
@@ -74,24 +117,10 @@ def run():
     while True:
         try:
             scan_trending_for_whales()
-            check_wallet_trades("GA2dvcJrKZnL64tWyVCBiwexDH1qTofESKQzSxWUfGRd")
+            check_smart_wallets()
         except Exception as e:
             print(f"  [whale] error: {e}")
         time.sleep(INTERVAL)
 
-
-HELIUS_API_KEY = os.getenv("HELIUS_API_KEY", "")
-HELIUS_URL = "https://api.helius.xyz/v0"
-
-def get_helius_transactions(wallet, limit=10):
-    url = f"{HELIUS_URL}/addresses/{wallet}/transactions"
-    params = {"api-key": HELIUS_API_KEY, "limit": limit}
-    try:
-        r = requests.get(url, params=params, timeout=8)
-        r.raise_for_status()
-        return r.json()
-    except Exception as e:
-        print(f"[whale_tracker] Helius error for {wallet}: {e}")
-        return []
 if __name__ == "__main__":
     run()

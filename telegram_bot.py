@@ -11,18 +11,9 @@ BrothaB0T — telegram_bot.py  v6.0
 ✅ Custom commands (bot learns from usage)
 ✅ Natural language intent parser
 ✅ Button dashboards — no typing required
-import os
-from dotenv import load_dotenv
-load_dotenv()
-
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 ✅ Secrets loaded from .env — nothing hardcoded
 """
 from emergency_agent import install_emergency_handler
-from dotenv import load_dotenv
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
-install_emergency_handler()
-
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  IMPORTS
@@ -47,6 +38,7 @@ from emergency_agent import install_emergency_handler
 from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+install_emergency_handler()
 
 from bs4 import BeautifulSoup
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup

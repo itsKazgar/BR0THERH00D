@@ -363,7 +363,6 @@ def main():
     print(f"\n{CY}{BD}━━━ OTHER SETUP ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{RS}")
     setup_telegram()
     setup_solana()
-    setup_wallet()
 
     # Summary
     print_summary()

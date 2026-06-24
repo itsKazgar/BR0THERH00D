@@ -170,9 +170,34 @@ def build_thesis(symbol, data, rug, momentum):
     fdv       = float(data.get("fdv") or 0)
     buy_pct   = (buys / max(buys + sells, 1)) * 100
 
+    description = (data.get("description") or "").strip()
+    twitter     = (data.get("twitter") or "").strip()
+    website     = (data.get("website") or "").strip()
+    narratives  = data.get("narratives") or []  # populated once social_scanner is wired in
+
     bull = []
     bear = []
 
+    # ── Real thesis content first — what the project actually claims to be,
+    # and whether it has any social presence at all. This is the part that
+    # used to be entirely missing: every line below this used to be the
+    # ONLY content in a "thesis," meaning a thesis was just restated price
+    # stats with no actual story behind it.
+    if description:
+        bull.append(f"Project claims: \"{description[:140]}\"")
+    else:
+        bear.append("No project description found — likely a bare/anonymous launch")
+
+    social_links = [s for s in (("Twitter", twitter), ("Website", website)) if s[1]]
+    if social_links:
+        bull.append(f"Has social presence: {', '.join(name for name, _ in social_links)}")
+    else:
+        bear.append("No Twitter or website found — no public-facing identity")
+
+    if narratives:
+        bull.append(f"Riding active narrative(s): {', '.join(narratives)}")
+
+    # ── Price/volume stats — real signal, but secondary to the actual story
     if change > 50:  bull.append(f"+{change:.0f}% — momentum is real")
     if change > 10:  bull.append(f"Uptrend confirmed: +{change:.1f}%")
     if buy_pct > 60: bull.append(f"{buy_pct:.0f}% of trades are buys — accumulation")
@@ -193,8 +218,17 @@ def build_thesis(symbol, data, rug, momentum):
         f"Stop at {TRADE_RULES['stop_loss_pct']:.0f}%. Scalp first, compound profits."
     )
 
+    # Summary leads with the real story if we have one, falls back to the
+    # momentum signal only when there's genuinely nothing else to say.
+    if description:
+        summary = f"{symbol}: \"{description[:100]}\""
+    elif narratives:
+        summary = f"{symbol}: riding {narratives[0]} narrative"
+    else:
+        summary = f"{symbol}: {momentum['signals'][0] if momentum['signals'] else 'signals mixed, no project info found'}"
+
     return {
-        "summary": f"{symbol}: {momentum['signals'][0] if momentum['signals'] else 'signals mixed'}",
+        "summary": summary,
         "bull_case": bull,
         "bear_case": bear,
         "trade_plan": plan,
@@ -206,7 +240,8 @@ def build_thesis(symbol, data, rug, momentum):
             "buy_pressure": f"{buy_pct:.0f}% buys",
             "rug_score": f"{rug['risk_score']}/100",
             "momentum": f"{momentum['momentum_score']}/100",
-        }
+        },
+        "has_real_thesis": bool(description or narratives),
     }
 
 

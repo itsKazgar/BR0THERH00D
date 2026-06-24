@@ -1,5 +1,8 @@
 .env
 venv/
-core/brain.db
+data/
+logs/
+*.db
+*.log
 __pycache__/
 *.pyc
