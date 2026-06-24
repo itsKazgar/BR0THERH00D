@@ -69,18 +69,29 @@ Format: {{"agent": "{persona['name']}", "decision": "TRADE|HOLD|PASS", "confiden
             data["decision"] = d
             return data
         except Exception as e:
-            if attempt == 0 and "No JSON" in str(e):
-                # nudge it harder on retry
+            # Retry on ANY JSON-related failure, not just "missing object
+            # entirely" — a malformed-but-present JSON blob (e.g. a model
+            # response cut off mid-string, producing "Expecting ':'
+            # delimiter") used to skip straight to the fallback on attempt
+            # 0, never getting the harder-nudge retry that "No JSON" got.
+            # Both are the same underlying problem: the model didn't return
+            # clean JSON, so both deserve the same one retry.
+            is_json_failure = isinstance(e, json.JSONDecodeError) or "No JSON" in str(e)
+            if attempt == 0 and is_json_failure:
                 prompt += "\n\nCRITICAL: Return ONLY the JSON object. Start with { and end with }. No other text."
                 continue
-            # both attempts failed — mark ERROR (not HOLD). A failed safety/veto
-            # agent must BLOCK the trade, not be silently ignored.
+            # Both attempts failed — mark ERROR (not HOLD). A failed safety/
+            # veto agent must BLOCK the trade, not be silently ignored. The
+            # thesis/reasoning shown to the user is a clear, honest label —
+            # NEVER the raw exception text, which would otherwise display
+            # things like "error: Expecting ':' delimiter: line 1" in the
+            # council printout as if it were real reasoning about the coin.
             return {
                 "agent":      persona["name"],
                 "decision":   "ERROR",
                 "confidence": 0,
-                "thesis":     f"error: {e}",
-                "reasoning":  "Agent failed after retry — treated as a safety block."
+                "thesis":     "AI response unparseable after retry — voting as a safety block",
+                "reasoning":  f"Agent failed after retry — treated as a safety block. (debug: {e})"
             }
 
 
