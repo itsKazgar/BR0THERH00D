@@ -142,6 +142,32 @@ async def unified_vote(coin: dict, score: int, reasons: list, prompt: str,
     name = coin.get("name", "?")
     now = datetime.now().strftime("%H:%M:%S")
 
+    # Free-tier API guard: Risk Manager's numeric checks are instant and
+    # cost nothing. Running all 6 AI personas (SEER/QUANT/EXEC/GUARDIAN/
+    # CHAIN/REAPER) before even checking these was burning ~6 calls on
+    # tokens that were going to get hard-vetoed by liquidity/volume/age
+    # checks anyway — the single biggest source of rate-limit exhaustion
+    # on a free API plan. Pre-screen with the free check first; only pay
+    # for AI judgment on tokens that have passed the cheap gate.
+    pre_rm = _vote_risk_manager(coin, score)
+    if not pre_rm["vote"]:
+        print(f"\n{MG}{BD}╔══════════════════════════════════════════════╗{RS}")
+        print(f"{MG}{BD}║  ♟️  UNIFIED COUNCIL — {name:<22}║{RS}")
+        print(f"{MG}{BD}╠══════════════════════════════════════════════╣{RS}")
+        print(f"  {RD}❌{RS} {BD}PRE-SCREEN{RS} failed numeric risk check before AI calls — {pre_rm['reason'][:60]}")
+        print(f"{MG}{BD}╠══════════════════════════════════════════════╣{RS}")
+        print(f"  VERDICT: {RD}REJECTED{RS} — pre-screen, no AI calls spent")
+        print(f"{MG}{BD}╚══════════════════════════════════════════════╝{RS}")
+        brain.remember("unified_council",
+            f"{name} REJECTED | pre-screen: {pre_rm['reason']}",
+            type="council_vote", tags=f"{name.lower()},unified,prescreen")
+        return {
+            "approved": False, "reason": f"pre-screen: {pre_rm['reason']}",
+            "votes_for": 0, "total_weight": 0, "weighted_pct": 0,
+            "veto_fired": True, "veto_by": "PRE-SCREEN", "results": [],
+            "avg_confidence": 0,
+        }
+
     # AI-backed seats run in parallel (real model calls) — same agents as
     # before, minus "income" (YIELD), which is deliberately excluded.
     ai_personas = ["intel", "analyst", "trader", "risk", "onchain", "security"]
