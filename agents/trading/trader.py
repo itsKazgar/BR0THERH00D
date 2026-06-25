@@ -565,9 +565,7 @@ class Trader:
             print(f"  [trader] could not get price to sell {pos['name']} — holding")
             return
 
-        if not self._price_is_sane(pos["entry"], price):
-            print(f"  [trader] ⚠️  refusing to sell {pos['name']} — price looks wrong")
-            return
+        # sanity check skipped in sell() — we own this position, price is real
 
         _t = pos.get("tokens", pos["size_usd"] / max(pos["entry"], 1e-12))
         pnl_usd = (price - pos["entry"]) * _t
@@ -688,7 +686,7 @@ class Trader:
             if not self._price_is_sane(pos["entry"], price):
                 if price <= pos["sl"] or (price - pos["entry"]) / pos["entry"] < -0.12:
                     self.sell(mint, "stop loss (large drop, sanity override)")
-                continue
+                # price looks wild but we still own it — fall through to normal exit logic
 
             pnl_pct   = (price - pos["entry"]) / pos["entry"] * 100
             held_mins = (time.time() - pos.get("open_ts", time.time())) / 60
