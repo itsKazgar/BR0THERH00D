@@ -1,5 +1,5 @@
 CY='';GR='';YL='';RD='';BD='';DM='';RS=''
-import sys, os, time, requests
+import sys, os, time, requests, threading, queue
 from datetime import datetime
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from core import brain
@@ -32,6 +32,10 @@ TAKE_PROFIT_PCT  = 0.04       # base TP +4%
 STOP_LOSS_PCT    = 0.08       # base SL -8%
 MAX_HOLD_MINS    = 30
 CHECK_INTERVAL   = 10
+
+DAILY_LOCK_RESET_SECS = 24 * 60 * 60   # rolling 24h from last reset
+PROFIT_LOCK_PCT       = 0.20            # daily profit % that triggers the lock (was 0.07)
+EXTEND_TARGET_PCT     = 0.20            # the one-time bypass adds this much more on top
 
 SLIPPAGE_BPS     = 150        # 1.5% slippage tolerance
 
@@ -148,6 +152,8 @@ class Trader:
         self.history           = s.get("history", [])
         self.session_trades    = []
         self.day_start_balance = s.get("day_start_balance", self.balance)
+        self.day_start_ts      = s.get("day_start_ts", time.time())
+        self.bypass_active     = s.get("bypass_active", False)
 
         # Fetch SOL price first — needed for live balance sync
         self.sol_price = get_sol_price_usd()
@@ -195,6 +201,7 @@ class Trader:
             self.balance = sol_amt * self.sol_price
         if startup:
             self.day_start_balance = self.balance
+            self.day_start_ts      = time.time()
             self.live_sol_balance  = sol_amt
             print(f"  [wallet] 🔴 LIVE — ◎{sol_amt:.4f} SOL  (${self.balance:.2f})")
 
@@ -243,6 +250,8 @@ class Trader:
             "trades":            self.trades,
             "history":           self.history[-100:],
             "day_start_balance": self.day_start_balance,
+            "day_start_ts":      self.day_start_ts,
+            "bypass_active":     self.bypass_active,
             "updated":           datetime.now().isoformat(),
         })
 
@@ -1041,15 +1050,53 @@ class Trader:
     def is_profit_locked(self):
         if not hasattr(self, "day_start_balance"):
             self.day_start_balance = self.balance
-        target = self.day_start_balance * 1.07
-        floor  = self.day_start_balance * 0.85
+        if not hasattr(self, "day_start_ts"):
+            self.day_start_ts = time.time()
+        if not hasattr(self, "bypass_active"):
+            self.bypass_active = False
+
+        # Rolling 24h reset — counts from whenever the previous window
+        # actually ended (last reset), not wall-clock midnight.
+        if time.time() - self.day_start_ts >= DAILY_LOCK_RESET_SECS:
+            self.day_start_balance = self.balance
+            self.day_start_ts      = time.time()
+            self.bypass_active     = False
+            print(f"  [trader] 🔄 24h window reset — new baseline {format_balance(self.balance, self.sol_price)}")
+
+        base_target = self.day_start_balance * (1 + PROFIT_LOCK_PCT)
+        target      = base_target
+        if self.bypass_active:
+            target = self.day_start_balance * (1 + PROFIT_LOCK_PCT + EXTEND_TARGET_PCT)
+
+        floor = self.day_start_balance * 0.85
+
         if self.balance <= floor and len(self.positions) == 0:
-            print(f"  [trader] 🛑 daily loss limit — down 5% today ({format_balance(self.balance, self.sol_price)})")
+            print(f"  [trader] 🛑 daily loss limit — down 15% today ({format_balance(self.balance, self.sol_price)})")
             return True
+
         if self.balance >= target and len(self.positions) == 0:
-            print(f"  [trader] 🔒 profit lock — up 7% today ({format_balance(self.balance, self.sol_price)})")
+            if self.bypass_active:
+                print(f"  [trader] 🔒 profit lock — bypass leg complete, up "
+                      f"{(PROFIT_LOCK_PCT + EXTEND_TARGET_PCT)*100:.0f}% today "
+                      f"({format_balance(self.balance, self.sol_price)})")
+                self.bypass_active = False   # one-time use — re-arm required to extend again
+            else:
+                print(f"  [trader] 🔒 profit lock — up {PROFIT_LOCK_PCT*100:.0f}% today "
+                      f"({format_balance(self.balance, self.sol_price)})")
             return True
+
         return False
+
+    def request_extend(self):
+        """Console bypass: allow one more +EXTEND_TARGET_PCT leg before re-locking."""
+        if not getattr(self, "bypass_active", False):
+            self.bypass_active = True
+            new_target = self.day_start_balance * (1 + PROFIT_LOCK_PCT + EXTEND_TARGET_PCT)
+            print(f"  [trader] 🟢 bypass armed — trading resumes for one more "
+                  f"+{EXTEND_TARGET_PCT*100:.0f}% leg (new target {format_balance(new_target, self.sol_price)}), "
+                  f"then re-locks")
+        else:
+            print(f"  [trader] bypass already active for this leg")
 
     def is_market_choppy(self):
         recent = self.session_trades[-3:] if len(self.session_trades) >= 3 else []
@@ -1069,13 +1116,43 @@ class Trader:
             return False
         return True
 
+    # ── Console commands (typed while running) ─────────────
+
+    def _start_command_listener(self):
+        """Reads stdin in a background thread so typed commands don't block
+        the trading loop's time.sleep(). Each line typed + Enter is queued."""
+        self._cmd_queue = queue.Queue()
+
+        def _reader():
+            for line in sys.stdin:
+                self._cmd_queue.put(line.strip().lower())
+
+        t = threading.Thread(target=_reader, daemon=True)
+        t.start()
+
+    def _process_commands(self):
+        if not hasattr(self, "_cmd_queue"):
+            return
+        while not self._cmd_queue.empty():
+            cmd = self._cmd_queue.get_nowait()
+            if cmd in ("extend", "extend lock", "bypass", "continue"):
+                self.request_extend()
+            elif cmd in ("status", "?"):
+                self.print_status()
+            elif cmd:
+                print(f"  [trader] unknown command '{cmd}' — try: extend | status")
+
     # ── Main loop ──────────────────────────────────────────
 
     def run(self):
         print(f"{CY}{BD}🤖 BR0THER TRADER [{self.mode}]{RS} running — Ctrl+C to stop\n")
+        print(f"  [trader] type 'extend' + Enter any time to bypass an active "
+              f"profit lock for one more +{EXTEND_TARGET_PCT*100:.0f}% leg\n")
+        self._start_command_listener()
         cycle = 0
         while True:
             try:
+                self._process_commands()
                 # Refresh SOL price every minute
                 if cycle % 6 == 0:
                     self._refresh_sol_price()
