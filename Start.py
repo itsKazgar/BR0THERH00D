@@ -809,6 +809,13 @@ async def run_engine():
     # init the sophisticated Trader (handles its own banner + brain state load)
     trader = Trader()
 
+    # Start.py runs its own loop (not trader.run()), so start the trader's
+    # console command listener here — this is what makes 'extend' work.
+    if hasattr(trader, "_start_command_listener"):
+        trader._start_command_listener()
+        print("  [trader] type 'extend' + Enter any time to bypass an active "
+              "profit lock for one more leg")
+
     print("\n  Ctrl+C for a clean shutdown.\n")
     log.info("engine started mode=%s", mode_label)
 
@@ -817,6 +824,10 @@ async def run_engine():
     while RUNNING:
         STATS["cycles"] += 1
         now = time.time()
+
+        # pick up any typed console commands (e.g. 'extend')
+        if hasattr(trader, "_process_commands"):
+            trader._process_commands()
 
         try:
             await fast_cycle(trader)
@@ -854,6 +865,8 @@ async def run_engine():
         for _ in range(FAST_INTERVAL):
             if not RUNNING:
                 break
+            if hasattr(trader, "_process_commands"):
+                trader._process_commands()
             await asyncio.sleep(1)
 
     print(f"\n[SYSTEM] stopped after {_uptime()} — "
