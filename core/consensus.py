@@ -77,7 +77,7 @@ def _vote_risk_manager(coin: dict, score: int) -> dict:
         c = m["content"].lower()
         if "bearish" in c or "fear" in c or "dumping" in c:
             bearish_count += 1
-    if bearish_count >= 5 and score < 70:
+    if bearish_count >= 5 and score < 50:
         flags.append(f"bearish market ({bearish_count}/5 signals bearish)")
 
     # Check recent risk alerts from brain
