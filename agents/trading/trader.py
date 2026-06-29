@@ -151,9 +151,14 @@ class Trader:
         self.positions         = s.get("positions", {})
         self.history           = s.get("history", [])
         self.session_trades    = []
-        self.day_start_balance = s.get("day_start_balance", self.balance)
-        self.day_start_ts      = s.get("day_start_ts", time.time())
-        self.bypass_active     = s.get("bypass_active", False)
+        # Per-run reset: every launch of Start.py re-baselines the daily
+        # profit lock to the *current* balance, so opening/closing the bot
+        # starts a fresh window. (We intentionally ignore any persisted
+        # day_start_balance/ts here — they were causing the bot to re-lock
+        # against a stale baseline across restarts.)
+        self.day_start_balance = self.balance
+        self.day_start_ts      = time.time()
+        self.bypass_active     = False
 
         # Fetch SOL price first — needed for live balance sync
         self.sol_price = get_sol_price_usd()
@@ -1055,8 +1060,9 @@ class Trader:
         if not hasattr(self, "bypass_active"):
             self.bypass_active = False
 
-        # Rolling 24h reset — counts from whenever the previous window
-        # actually ended (last reset), not wall-clock midnight.
+        # Bonus: if the bot is left running continuously for 24h+, re-baseline
+        # mid-run too. (Normally the per-run reset in __init__ handles this on
+        # restart; this only matters for very long uninterrupted sessions.)
         if time.time() - self.day_start_ts >= DAILY_LOCK_RESET_SECS:
             self.day_start_balance = self.balance
             self.day_start_ts      = time.time()
@@ -1071,17 +1077,17 @@ class Trader:
         floor = self.day_start_balance * 0.85
 
         if self.balance <= floor and len(self.positions) == 0:
-            print(f"  [trader] 🛑 daily loss limit — down 15% today ({format_balance(self.balance, self.sol_price)})")
+            print(f"  [trader] 🛑 loss limit — down 15% this run ({format_balance(self.balance, self.sol_price)})")
             return True
 
         if self.balance >= target and len(self.positions) == 0:
             if self.bypass_active:
                 print(f"  [trader] 🔒 profit lock — bypass leg complete, up "
-                      f"{(PROFIT_LOCK_PCT + EXTEND_TARGET_PCT)*100:.0f}% today "
+                      f"{(PROFIT_LOCK_PCT + EXTEND_TARGET_PCT)*100:.0f}% this run "
                       f"({format_balance(self.balance, self.sol_price)})")
                 self.bypass_active = False   # one-time use — re-arm required to extend again
             else:
-                print(f"  [trader] 🔒 profit lock — up {PROFIT_LOCK_PCT*100:.0f}% today "
+                print(f"  [trader] 🔒 profit lock — up {PROFIT_LOCK_PCT*100:.0f}% this run "
                       f"({format_balance(self.balance, self.sol_price)})")
             return True
 
