@@ -57,7 +57,7 @@ def _vote_risk_manager(coin: dict, score: int) -> dict:
     # data on junk) — that's "unknown," not "ancient." Treating it as
     # ancient was vetoing legitimate established tokens. Only flag a real,
     # known age over the threshold.
-    if 0 < age <= 999 and age > 48:
+    if 0 < age <= 999 and age > 200:
         flags.append(f"too old ({age:.0f}h)")
     if liq < 6_000:       flags.append(f"thin liq (${liq:,.0f})")
     if ch1h > 900:         flags.append(f"already pumped {ch1h:.0f}%")
